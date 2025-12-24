@@ -46,7 +46,6 @@ sdtp_module_load(void)
 	int error = 0;
 
 #ifdef INET
-    uprintf("IP4 active!\n");
 	error = protosw_register(&inetdomain, &sdtp_protosw);
 	if (error != 0)
 		return (error);
@@ -56,7 +55,6 @@ sdtp_module_load(void)
 		return (error);
 #endif
 #ifdef INET6
-    uprintf("IP6 active!\n");
     error = protosw_register(&inet6domain, &sdtp6_protosw);
     if (error != 0)
 		return (error);
@@ -64,12 +62,14 @@ sdtp_module_load(void)
     if (error != 0)
 		return (error);
 #endif
-	
+
+    /*	
     error = kthread_add(&sdtp_timer_main, NULL, NULL, &timer_kthread, 0, 0, "sdtp_timer");
     if (error != 0) {
         timer_kthread = NULL;
         return (error);
     }
+    */
     // sched_add(timer_kthread, SRQ_BORING);
 
     error = sdtp_init(sdtp);
