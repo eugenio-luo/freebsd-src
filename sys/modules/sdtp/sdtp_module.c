@@ -30,15 +30,10 @@
 struct sdtp sdtp_data;
 struct sdtp *sdtp = &sdtp_data;
 
-static struct thread *timer_kthread;
-
 extern struct protosw sdtp_protosw;
 extern struct protosw sdtp6_protosw;
 
-static void sdtp_timer_main(void * __unused arg);
 static volatile bool existing = false;
-
-int running = 0;
 
 static int
 sdtp_module_load(void)
@@ -75,14 +70,6 @@ sdtp_module_load(void)
     error = sdtp_init(sdtp);
 	// error = sdtp_syscalls_init();
 	return error;
-}
-
-static void sdtp_timer_main(void * __unused arg)
-{
-    running = 1;
-    // while (!existing);
-
-    kthread_exit();
 }
 
 static int
@@ -128,8 +115,6 @@ static moduledata_t sdtp_mod = {
 	&sdtp_modload,
 	NULL,
 };
-
-SYSCTL_INT(_debug, OID_AUTO, sdtp_module, CTLFLAG_RW, &running, 0, "sdtp_module");
 
 DECLARE_MODULE(sdtp, sdtp_mod, SI_SUB_PROTO_IFATTACHDOMAIN, SI_ORDER_ANY);
 MODULE_VERSION(sdtp, 1);

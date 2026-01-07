@@ -14,50 +14,94 @@
 #include <sys/types.h>
 #include <sys/param.h>
 #include <sys/systm.h>
+#include <sys/pcpu.h>
+#include <sys/smp.h>
+
 #include <machine/cpu.h>
 #include <machine/atomic.h>
 #include <sys/socketvar.h>
 
 // TODO: sxlock 
+/*
 
-char *core_memory;
-
-struct sdtp_base_info base_info;
-
-static void
-sdtp_pcb_init(void)
+struct sdtp_rpc *
+sdtp_rpc_new_client(struct sdtp_inpcb *pcb, const struct sockaddr_in_union *dest, int *error)
 {
-	rw_init(&(base_info.sdtp_zone_sock_lock), "sdtp_sock_lock");
-	rw_init(&(base_info.sdtp_zone_rpc_lock), "sdtp_rpc_lock");
+    struct sdtp_rpc *rpc;
+    //struct sdtp_rpc_bucket *bucket;
+    struct in6_addr dest_addr;
+
+    *error = 0;
+    dest_addr = canonical_ipv6_addr(dest);
     
-    SDTP_ZONE_INIT(base_info.sdtp_zone_sock, "sdtp_sock",
+    rw_wlock(&(base_info.sdtp_zone_rpc_lock));
+    rpc = SDTP_ZONE_GET(base_info.sdtp_zone_rpc, struct sdtp_rpc);
+    rw_wunlock(&(base_info.sdtp_zone_rpc_lock));
+    if (rpc == NULL) {
+        *error = ENOBUFS;
+        return NULL;
+    }
+
+    rpc->sdtpcb = pcb;
+    rpc->id = atomic_fetchadd_64(&pcb->sdtp->next_out_id, 2); 
+    
+    (void) dest_addr;
+    return rpc;
+}
+*/
+
+MALLOC_DEFINE(M_SDTP_PEERMAP, "sdtp peermap", "SDTP peermap buckets");
+DPCPU_DEFINE(struct sdtp_core, sdtp_cores);
+struct sdtp_zones zones;
+
+static int 
+sdtp_zone_init(void)
+{
+    SDTP_ZONE_INIT(zones.sdtp_zone_sock, "sdtp_sock",
 	    sizeof(struct sdtp_inpcb), maxsockets);
-    SDTP_ZONE_INIT(base_info.sdtp_zone_rpc, "sdtp_rpc",
+    SDTP_ZONE_INIT(zones.sdtp_zone_rpc, "sdtp_rpc",
         sizeof(struct sdtp_rpc), MAX_SDTP_RPC);
+
+    return 0;
 }
 
-// socktab
+static int
+sdtp_core_init(void)
+{
+    int cpu;
+    struct sdtp_core *core;
+
+    CPU_FOREACH(cpu) {
+        core = DPCPU_ID_PTR(cpu, sdtp_cores);
+
+        core->last_active = 0;
+        core->last_gro = 0;
+        core->held_packet = NULL;
+        core->held_bucket = 0;
+    }
+
+    return 0;
+}
+
 static void
 sdtp_pcbmap_init(struct sdtp_pcbmap *pcbmap)
 {
 	int i;
-	mtx_init(&pcbmap->write_mtx, "sdtp pcbmap write spinlock", NULL, MTX_SPIN);
+	mtx_init(&pcbmap->write_spinlock, "sdtp pcbmap write spinlock", NULL, MTX_SPIN);
 	for (i = 0; i < SDTP_PCBMAP_BUCKETS; i++) {
 	    LIST_INIT(&pcbmap->buckets[i]);
 	}
 }
-
-MALLOC_DEFINE(M_SDTP_PEERMAP, "sdtp peermap", "SDTP peermap buckets");
 
 static int
 sdtp_peermap_init(struct sdtp_peermap *peermap)
 {
 	int i;
 	
-    mtx_init(&peermap->write_mtx, "sdtp peermap write spinlock", NULL, MTX_SPIN);
-	LIST_INIT(&peermap->dead_dsts);
+    mtx_init(&peermap->write_spinlock, "sdtp peermap write spinlock", NULL, MTX_SPIN);
+	TAILQ_INIT(&peermap->dead_dsts);
 
-    peermap->buckets = (struct sdtp_peer_head *) malloc(SDTP_PEERTAB_BUCKETS * sizeof(*peermap->buckets),
+    peermap->buckets = (struct sdtp_peer_list *) malloc(SDTP_PEERTAB_BUCKETS * sizeof(*peermap->buckets),
                                                         M_SDTP_PEERMAP, M_WAITOK);
     if (!peermap->buckets)
 		return ENOMEM;
@@ -68,29 +112,18 @@ sdtp_peermap_init(struct sdtp_peermap *peermap)
 	return 0;
 }
 
-/*
- * sdtp_init() - Constructor for sdtp objects.
- *
- * Return: 0 on success, or a negative errno if there was an error.
- *         Even if an error occurs, it is safe and necessary to call
- *         sdtp_uninit.
- */
-int sdtp_init(struct sdtp *sdtp)
+static int
+sdtp_struct_init(struct sdtp *sdtp)
 {
-    int i;
+    int err, i;
 
-    sdtp_pcb_init();
+    /* fix pacer thread */
+    sdtp->pacer_kthread = NULL;
 
-    if (!core_memory) {
-        // initialize core memory
-    }
-
-	sdtp->pacer_kthread = NULL;
-	// todo: what is the equivalent of: init_completion(&homa_pacer_kthread_done);
-    atomic_store_64(&sdtp->next_out_id, 2);
-	atomic_store_64(&sdtp->link_idle_time, get_cyclecount());
+    atomic_store_64(&sdtp->next_out_id_atomic, 2);
+	atomic_store_64(&sdtp->link_idle_time_atomic, get_cyclecount());
 	mtx_init(&sdtp->grantable_spinlock, "sdtp grantable spinlock", NULL, MTX_SPIN);
-	LIST_INIT(&sdtp->grantable_rpcs);
+	TAILQ_INIT(&sdtp->grantable_rpcs);
 	sdtp->num_grantable_rpcs = 0;
 	sdtp->last_grantable_change = get_cyclecount();
 	sdtp->max_grantable_rpcs = 0;
@@ -101,13 +134,13 @@ int sdtp_init(struct sdtp *sdtp)
 	sdtp->pacer_fifo_count = 1;
 	sdtp->pacer_wake_time = 0;
 	mtx_init(&sdtp->throttle_spinlock, "sdtp throttle spinlock", NULL, MTX_SPIN);
-	LIST_INIT(&sdtp->throttled_rpcs);
+	TAILQ_INIT(&sdtp->throttled_rpcs);
 	sdtp->throttle_add = 0;
 	sdtp->throttle_min_bytes = 1000;
-	atomic_store_64(&sdtp->total_incoming, 0);
+	atomic_store_64(&sdtp->total_incoming_atomic, 0);
 	sdtp->next_client_port = SDTP_MIN_DEFAULT_PORT;
     sdtp_pcbmap_init(&sdtp->port_map);
-    int err = sdtp_peermap_init(&sdtp->peers);
+    err = sdtp_peermap_init(&sdtp->peers);
     if (err) {
 		return err;
 	}
@@ -151,7 +184,7 @@ int sdtp_init(struct sdtp *sdtp)
 	sdtp->gro_policy = SDTP_GRO_NORMAL;
 	sdtp->gro_busy_usecs = 10;
 	sdtp->timer_ticks = 0;
-	mtx_init(&sdtp->metrics_lock, "sdtp metrics spinlock", NULL, MTX_SPIN);
+	mtx_init(&sdtp->metrics_spinlock, "sdtp metrics spinlock", NULL, MTX_SPIN);
 	sdtp->metrics = NULL;
 	sdtp->metrics_capacity = 0;
 	sdtp->metrics_length = 0;
@@ -164,140 +197,25 @@ int sdtp_init(struct sdtp *sdtp)
 	strncpy(sdtp->hardware_interface, "enp1s0f0np0", sizeof(sdtp->hardware_interface) - 1);
 
     uprintf("sdtp_init(): %lu\n", sizeof(struct sdtp));
-	return 0;
+    return err;
+}
+
+int sdtp_init(struct sdtp *sdtp)
+{
+    CTASSERT(SDTP_MAX_PRIORITIES >= 8);
+    
+    int err;
+
+    err = sdtp_zone_init();
+    err = sdtp_core_init();
+    err = sdtp_struct_init(sdtp);
+
+    return err;
 }
 
 int sdtp_uninit(struct sdtp *sdtp)
 {
-	rw_destroy(&(base_info.sdtp_zone_sock_lock));
-    SDTP_ZONE_DESTROY(base_info.sdtp_zone_sock);
-    SDTP_ZONE_DESTROY(base_info.sdtp_zone_rpc);
+    SDTP_ZONE_DESTROY(zones.sdtp_zone_sock);
+    SDTP_ZONE_DESTROY(zones.sdtp_zone_rpc);
     return 0;
-}
-
-static struct sdtp_inpcb *sdtp_find_pcb(struct sdtp_pcbmap *pcbmap, uint16_t port)
-{
-    struct sdtp_pcbmap_link *link;
-    struct sdtp_inpcb *result = NULL;
-
-    /* todo: do we need `hlist_for_each_entry_rcu` here? */
-	LIST_FOREACH(link, &pcbmap->buckets[sdtp_port_hash(port)], hash_links) {
-        struct sdtp_inpcb *pcb = link->sock;
-        if (pcb->port == port) {
-            result = pcb;
-            break;
-        }
-    }
-    
-	return result;
-}
-
-int sdtp_inpcb_alloc(struct socket *so, struct sdtp *sdtp)
-{
-    int error, i;
-	struct sdtp_inpcb *inp;
-    struct sdtp_pcbmap *pcbmap = &sdtp->port_map;
-
-    error = 0;
-
-    rw_wlock(&(base_info.sdtp_zone_sock_lock));
-    inp = SDTP_ZONE_GET(base_info.sdtp_zone_sock, struct sdtp_inpcb);
-    if (inp == NULL) {
-        rw_wunlock(&(base_info.sdtp_zone_sock_lock));
-        return ENOBUFS;
-    }
-	memset(inp, 0, sizeof(*inp));
-
-    inp->socket = so;
-	inp->inp.inp_socket = so;
-	inp->inp.inp_cred = crhold(so->so_cred);
-#ifdef INET6
-	if (INP_SOCKAF(so) == AF_INET6) {
-		if (MODULE_GLOBAL(ip6_auto_flowlabel)) {
-			inp->inp.inp_flags |= IN6P_AUTOFLOWLABEL;
-		}
-		if (MODULE_GLOBAL(ip6_v6only)) {
-			inp->inp.inp_flags |= IN6P_IPV6_V6ONLY;
-		}
-	}
-#endif
-
-    mtx_lock_spin(&pcbmap->write_mtx);
-    atomic_store_32(&inp->protect_count, 0);
-	mtx_init(&inp->lock, "socket spinlock", NULL, MTX_SPIN);
-	inp->last_locker = "none";
-    inp->sdtp = sdtp;
-	inp->ip_header_length = (inp->inp.inp_flags & INP_IPV4)
-			? SDTP_IPV4_HEADER_LENGTH : SDTP_IPV6_HEADER_LENGTH;
-	inp->shutdown = false;
-
-    while (1) {
-        if (sdtp->next_client_port < SDTP_MIN_DEFAULT_PORT) {
-			sdtp->next_client_port = SDTP_MIN_DEFAULT_PORT;
-		}
-		if (!sdtp_find_pcb(pcbmap, sdtp->next_client_port)) {
-			break;
-		}
-		sdtp->next_client_port++;
-    }
-    inp->port = sdtp->next_client_port;
-	// todo: hsk->inet.inet_num = hsk->port?
-    inp->inp.inp_lport = htons(inp->port);
-	sdtp->next_client_port++;
-	inp->pcbmap_links.sock = inp;
-    
-    // todo: what is the equivalent of hlist_add_head_rcu?
-    LIST_INSERT_HEAD(&pcbmap->buckets[sdtp_port_hash(inp->port)], &inp->pcbmap_links, hash_links);
-    LIST_INIT(&inp->active_rpcs);
-    LIST_INIT(&inp->dead_rpcs);
-    inp->dead_skbs = 0;
-    LIST_INIT(&inp->ready_requests);
-    LIST_INIT(&inp->ready_responses);
-    LIST_INIT(&inp->request_interests);
-    LIST_INIT(&inp->response_interests);
-    
-    for (i = 0; i < SDTP_CLIENT_RPC_BUCKETS; i++) {
-		struct sdtp_rpc_bucket *bucket = &inp->client_rpc_buckets[i];
-	    mtx_init(&bucket->lock, "SDTP client rpc bucket spinlock", NULL, MTX_SPIN);
-        LIST_INIT(&bucket->rpcs);
-	}
-    for (i = 0; i < SDTP_SERVER_RPC_BUCKETS; i++) {
-        struct sdtp_rpc_bucket *bucket = &inp->server_rpc_buckets[i];
-	    mtx_init(&bucket->lock, "SDTP server rpc bucket spinlock", NULL, MTX_SPIN);
-        LIST_INIT(&bucket->rpcs);
-        LIST_INIT(&inp->ctx_buckets[i]);
-    }
-	inp->reuse_ctx = NULL;
-	memset(&inp->buffer_pool, 0, sizeof(inp->buffer_pool));
-    
-    uprintf("socket created!\n");
-
-	mtx_unlock_spin(&pcbmap->write_mtx);
-    rw_wunlock(&(base_info.sdtp_zone_sock_lock));
-
-    return error;
-}
-
-struct sdtp_rpc *
-sdtp_rpc_new_client(struct sdtp_inpcb *pcb, const struct sockaddr_in_union *dest, int *error)
-{
-    struct sdtp_rpc *rpc;
-    struct sdtp_rpc_bucket *bucket;
-    struct in6_addr dest_addr;
-
-    *error = 0;
-    dest_addr = canonical_ipv6_addr(dest);
-    
-    rw_wlock(&(base_info.sdtp_zone_rpc_lock));
-    rpc = SDTP_ZONE_GET(base_info.sdtp_zone_rpc, struct sdtp_rpc);
-    rw_wunlock(&(base_info.sdtp_zone_rpc_lock));
-    if (inp == NULL) {
-        *error = ENOBUFS;
-        return NULL;
-    }
-
-    rpc->sdtpcb = pcb;
-    rpc->id = atomic_fetch_add(&pcb->sdtp->next_out_id, 2); 
-
-    return rpc;
 }

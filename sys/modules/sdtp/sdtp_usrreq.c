@@ -50,71 +50,69 @@ sdtp_attach(struct socket *so, int proto, struct thread *p)
     }
 
     error = sdtp_inpcb_alloc(so, sdtp);
-    if (error) {
-        return (error);
-    }
-
-    return 0;
-}
-
-static int
-sdtp_sendm(struct socket *so, int flags, struct mbuf *m, struct sockaddr *addr,
-    struct mbuf *control, struct thread *p)
-{
-    struct sdtp_inpcb *pcb = (struct sdtp_inpcb *) so->so_pcb;
-    struct sdtp_msg_args args;
-    uint64_t start = get_cyclecount();
-    uint64_t finish;
-    int error = 0;
-    struct sdtp_rpc *rpc = NULL;
-
-    /* todo: does control contain sdtp_msg_args? */
-    if (control == NULL || control->m_len < sizeof(args)) {
-        error = EINVAL;
-        goto sendm_error;
-    }
-    m_copydata(control, 0, sizeof(args), &args);
-
-    if (addr->sa_family != so->so_proto->pr_domain->dom_family) {
-        error = EAFNOSUPPORT;
-        goto out_error;
-    }
-
-    if ((addr->sa_len < sizeof(struct sockaddr_in)) || ((addr->sa_len < sizeof(struct sockaddr_in6)) && (addr->sa_family == AF_INET6))) {
-        error = EINVAL;
-        goto out_error;
-    }
-
-    if (args.id == 0) {
-
-        /* request message */
-        uprintf("hello");
-
-    } else {
-
-        uprintf("bye");
-    }
-
-sendm_error:
-    if (rpc != NULL) {
-        // todo: free rpc
-    }
-    if (control != NULL) {
-        m_freem(control);
-    }
-    if (m != NULL) {
-        m_freem(m);
-    }
 
     return error;
 }
+
+//static int
+//sdtp_sendm(struct socket *so, int flags, struct mbuf *m, struct sockaddr *addr,
+//    struct mbuf *control, struct thread *p)
+//{
+//    //struct sdtp_inpcb *pcb = (struct sdtp_inpcb *) so->so_pcb;
+//    struct sdtp_msg_args args;
+//    //uint64_t start = get_cyclecount();
+//    //uint64_t finish;
+//    int error = 0;
+//    struct sdtp_rpc *rpc = NULL;
+//
+//    /* todo: does control contain sdtp_msg_args? */
+//    if (control == NULL || control->m_len < sizeof(args)) {
+//        error = EINVAL;
+//        goto sendm_error;
+//    }
+//    m_copydata(control, 0, sizeof(args), (char *)&args);
+//
+//    if (addr->sa_family != so->so_proto->pr_domain->dom_family) {
+//        error = EAFNOSUPPORT;
+//        goto sendm_error;
+//    }
+//
+//    if ((addr->sa_len < sizeof(struct sockaddr_in)) || ((addr->sa_len < sizeof(struct sockaddr_in6)) && (addr->sa_family == AF_INET6))) {
+//        error = EINVAL;
+//        goto sendm_error;
+//    }
+//
+//    if (args.id == 0) {
+//
+//        /* request message */
+//        uprintf("hello");
+//
+//    } else {
+//
+//        uprintf("bye");
+//    }
+//
+//sendm_error:
+//    if (rpc != NULL) {
+//        // todo: free rpc
+//    }
+//    if (control != NULL) {
+//        m_freem(control);
+//    }
+//    if (m != NULL) {
+//        m_freem(m);
+//    }
+//
+//    return error;
+//}
 
 struct protosw sdtp_protosw = {
 	.pr_type = SOCK_DGRAM,
 	.pr_flags = 0,
 	.pr_protocol = IPPROTO_SDTP,
 	.pr_attach =	sdtp_attach,
-	.pr_send =	sdtp_sendm,
+	.pr_soreceive =	sdtp_soreceive
+	//.pr_send =	sdtp_sendm,
 	/*
 	.pr_connect =	sdtp_connect,
 	.pr_ctloutput =	sdp_ctloutput,
@@ -130,7 +128,6 @@ struct protosw sdtp_protosw = {
 	.pr_shutdown =	sctp_shutdown,
 	.pr_sockaddr =	sctp_ingetaddr,
 	.pr_sosend =	sctp_sosend,
-	.pr_soreceive =	sctp_soreceive
 	*/
 };
 
@@ -142,7 +139,7 @@ struct protosw sdtp6_protosw = {
 	.pr_flags = 0,
 	.pr_protocol = IPPROTO_SDTP,
 	.pr_attach =	sdtp_attach,
-	.pr_send =	sdtp_sendm,
+	//.pr_send =	sdtp_sendm,
 	/*
 	.pr_connect =	sdtp_connect,
 	.pr_ctloutput =	sdp_ctloutput,

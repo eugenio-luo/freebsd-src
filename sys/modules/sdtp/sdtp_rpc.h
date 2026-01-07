@@ -1,0 +1,142 @@
+/*
+ * SPDX-License-Identifier: BSD-2-Clause
+ *
+ * Copyright (c) 2024 The FreeBSD Foundation
+ *
+ * This software was developed by Eugenio Luo <>
+ * under sponsorship from the FreeBSD Foundation.
+ */
+
+#ifndef _SDTP_RPC_H_
+#define _SDTP_RPC_H_
+
+#include <sys/mutex.h>
+
+#include "sdtp_common.h"
+#include "sdtp_pcb.h"
+
+struct sdtp_peer;
+
+struct sdtp_packet {
+    struct mbuf *data;
+    uint32_t offset;
+    uint32_t length;
+};
+
+struct sdtp_packet_slist_entry {
+    struct sdtp_packet p;
+    SLIST_ENTRY(sdtp_packet_slist_entry) next;
+};
+
+struct sdtp_packet_tailq_entry {
+    struct sdtp_packet p;
+    TAILQ_ENTRY(sdtp_packet_tailq_entry) next;
+};
+
+struct sdtp_message_out {
+    int length;
+    int num_buffers;
+
+    struct sdtp_packet_slist packets;
+    struct sdtp_packet_slist_entry **nextxmit;
+    int next_xmit_offset;
+
+    unsigned int active_xmits_atomic;
+
+    int gso_pkt_data;
+    int unscheduled;
+    int granted;
+
+    uint8_t sched_priority;
+    uint64_t init_cycles;
+};
+
+struct sdtp_message_in {
+    int total_length;
+    
+    struct sdtp_packet_tailq packets;
+
+    int num_bufs;
+
+    int bytes_remaining;
+    int decrypt_offset;
+    struct sdtp_packet_tailq *decrypt_skb;
+	
+    int gsoseg_offset;
+	int nextgsoseg_length;
+	int nextgsoseg_received; 
+
+    struct sdtp_packet_tailq *gsoseg_mbufq;
+
+    unsigned int max_pkt_data;
+    int incoming;
+    int priority;
+    bool scheduled;
+    uint64_t birth;
+    int copied_out;
+    uint32_t num_bpages;
+    uint32_t bpage_offsets[SDTP_MAX_BPAGES];
+};
+
+struct sdtp_rpc {
+    struct sdtp_inpcb *sdtpcb;
+
+	struct mtx spinlock;
+
+    enum {
+        RPC_OUTGOING            = 5,
+		RPC_INCOMING            = 6,
+		RPC_IN_SERVICE          = 8,
+		RPC_DEAD                = 9
+    } state;
+
+    uint32_t flags_atomic;
+
+#define RPC_PKTS_READY        1
+#define RPC_COPYING_FROM_USER 2
+#define RPC_COPYING_TO_USER   4
+#define RPC_HANDING_OFF       8
+#define RPC_DECRYPTING	      16
+#define RPC_ACKING_HOMALS     32
+
+#define RPC_CANT_REAP (RPC_COPYING_FROM_USER | RPC_COPYING_TO_USER \
+		| RPC_HANDING_OFF | RPC_DECRYPTING | RPC_ACKING_HOMALS)
+
+    uint32_t grants_in_progress_atomic;
+
+	struct sdtp_peer *peer;
+
+    uint16_t dport;
+    uint64_t id;
+    uint64_t completion_cookie;
+    int error;
+    
+    struct sdtp_message_in msgin;
+    struct sdtp_message_out msgout;
+
+    LIST_ENTRY(sdtp_rpc) hash_links;
+    
+    struct sdtp_rpc_tailq ready_links;
+    struct sdtp_rpc_tailq active_links;
+	struct sdtp_rpc_tailq dead_links;
+
+    struct sdtp_interest *interest;
+
+	struct sdtp_rpc_tailq grantable_links;
+	struct sdtp_rpc_tailq throttled_links;
+
+    int silent_ticks;
+    uint32_t resend_timer_ticks;
+    uint32_t done_timer_ticks;
+
+#define SDTP_RPC_MAGIC 0xdeadbeef
+	int magic;
+
+	uint64_t start_cycles;
+
+	void *ctx;
+	void *rpc_offload_ctx_tx;
+	void *rpc_offload_ctx_rx;
+};
+
+#endif

@@ -23,7 +23,7 @@
 #define SDTP_ZONE_DESTROY(zone) uma_zdestroy(zone)
 
 #define SDTP_ZONE_GET(zone, type) \
-	(type *)uma_zalloc(zone, M_NOWAIT);
+	(type *)uma_zalloc(zone, M_NOWAIT | M_ZERO);
 
 #define SDTP_ZONE_FREE(zone, element) \
 	uma_zfree(zone, element);
