@@ -26,6 +26,7 @@
 #include <netinet6/ip6_var.h>
 
 #include "sdtp_structs.h"
+#include "sdtp_input.h"
 
 struct sdtp sdtp_data;
 struct sdtp *sdtp = &sdtp_data;
@@ -44,8 +45,7 @@ sdtp_module_load(void)
 	error = protosw_register(&inetdomain, &sdtp_protosw);
 	if (error != 0)
 		return (error);
-	// error = ipproto_register(IPPROTO_SDTP, sdtp_input, sdtp_ctlinput);
-	error = ipproto_register(IPPROTO_SDTP, NULL, NULL);
+	error = ipproto_register(IPPROTO_SDTP, sdtp_input, sdtp_ctlinput);
 	if (error != 0)
 		return (error);
 #endif
@@ -53,7 +53,7 @@ sdtp_module_load(void)
     error = protosw_register(&inet6domain, &sdtp6_protosw);
     if (error != 0)
 		return (error);
-	error = ip6proto_register(IPPROTO_SDTP, NULL, NULL);
+	error = ip6proto_register(IPPROTO_SDTP, sdtp6_input, sdtp6_ctlinput);
     if (error != 0)
 		return (error);
 #endif
@@ -78,7 +78,7 @@ sdtp_module_unload(void)
     int error = 0;
     existing = true;
 
-    error = sdtp_uninit(sdtp);
+    //error = sdtp_uninit(sdtp);
 #ifdef INET
 	(void)ipproto_unregister(IPPROTO_SDTP);
 	(void)protosw_unregister(&sdtp_protosw);
@@ -94,11 +94,11 @@ sdtp_module_unload(void)
 static int
 sdtp_modload(struct module *module, int cmd, void *arg)
 {
-	int error;
+	int error = 0;
 
 	switch (cmd) {
 	case MOD_LOAD:
-		error = sdtp_module_load();
+        error = sdtp_module_load();
 		break;
 	case MOD_UNLOAD:
 		error = sdtp_module_unload();

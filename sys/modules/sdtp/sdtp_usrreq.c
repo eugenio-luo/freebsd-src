@@ -55,6 +55,25 @@ sdtp_attach(struct socket *so, int proto, struct thread *p)
 }
 
 static int
+sdtp_soreceive(struct socket *so,
+    struct sockaddr **psa,
+    struct uio *uio,
+    struct mbuf **mp0,
+    struct mbuf **controlp,
+    int *flagsp)
+{
+    int error = 0;
+    struct sdtp_inpcb *inp;
+
+    inp = (struct sdtp_inpcb *) so->so_pcb;
+    if (inp == NULL) {
+        return EINVAL;
+    }
+
+    return error;
+}
+
+static int
 sdtp_bind(struct socket *so, struct sockaddr *addr, struct thread *p)
 {
     struct sdtp_inpcb *inp;
@@ -148,6 +167,7 @@ struct protosw sdtp_protosw = {
 	.pr_flags = 0,
 	.pr_protocol = IPPROTO_SDTP,
 	.pr_attach =	sdtp_attach,
+	.pr_soreceive =	sdtp_soreceive,
 	.pr_bind =	    sdtp_bind,
 	//.pr_send =	sdtp_sendm,
 	/*
@@ -175,6 +195,7 @@ struct protosw sdtp6_protosw = {
 	.pr_flags = 0,
 	.pr_protocol = IPPROTO_SDTP,
 	.pr_attach =	sdtp_attach,
+	.pr_soreceive =	sdtp_soreceive,
 	.pr_bind =	    sdtp_bind,
 	//.pr_send =	sdtp_sendm,
 	/*
@@ -191,7 +212,6 @@ struct protosw sdtp6_protosw = {
 	.pr_shutdown =	sctp_shutdown,
 	.pr_sockaddr =	sctp_ingetaddr,
 	.pr_sosend =	sctp_sosend,
-	.pr_soreceive =	sctp_soreceive
 	*/
 };
 
