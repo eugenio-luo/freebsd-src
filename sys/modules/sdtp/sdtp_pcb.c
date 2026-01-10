@@ -19,7 +19,9 @@
 extern struct sdtp_zones zones;
 
 // TODO: Currently unsafe for readers!!!! There is no atomic guarantee
-static struct sdtp_inpcb *sdtp_find_pcb(struct sdtp_pcbmap *pcbmap, uint16_t port)
+
+struct sdtp_inpcb *
+sdtp_find_inpcb(struct sdtp_pcbmap *pcbmap, uint16_t port)
 {
     struct sdtp_pcbmap_link *link;
     struct sdtp_inpcb *result = NULL;
@@ -32,8 +34,46 @@ static struct sdtp_inpcb *sdtp_find_pcb(struct sdtp_pcbmap *pcbmap, uint16_t por
             break;
         }
     }
-    
+
 	return result;
+}
+
+int
+sdtp_inpcb_bind(struct sdtp_pcbmap *pcbmap, uint16_t port, struct sdtp_inpcb *pcb)
+{
+    int error = 0;
+    struct sdtp_inpcb *owner;
+
+    if (port == 0) {
+        return error;
+    } else if (port >= SDTP_MIN_DEFAULT_PORT) {
+        return EINVAL;
+    }
+
+    mtx_lock_spin(&pcb->spinlock);
+    mtx_lock_spin(&pcbmap->write_spinlock);
+
+    if (pcb->shutdown) {
+        error = ESHUTDOWN;
+        goto sdtp_inpcb_bind_done;
+    }
+
+    owner = sdtp_find_inpcb(pcbmap, port);
+    if (owner != NULL) {
+        if (owner != pcb) {
+            error = EADDRINUSE;
+        }
+        goto sdtp_inpcb_bind_done;
+    }
+
+    LIST_REMOVE(&pcb->pcbmap_links, hash_links);
+    pcb->port = port;
+    LIST_INSERT_HEAD(&pcbmap->buckets[sdtp_port_hash(port)], &pcb->pcbmap_links, hash_links);
+
+sdtp_inpcb_bind_done:
+    mtx_unlock_spin(&pcbmap->write_spinlock);
+    mtx_unlock_spin(&pcb->spinlock);
+    return error;
 }
 
 int
@@ -89,7 +129,7 @@ sdtp_inpcb_alloc(struct socket *so, struct sdtp *sdtp)
         if (sdtp->next_client_port < SDTP_MIN_DEFAULT_PORT) {
 			sdtp->next_client_port = SDTP_MIN_DEFAULT_PORT;
 		}
-		if (!sdtp_find_pcb(pcbmap, sdtp->next_client_port)) {
+		if (!sdtp_find_inpcb(pcbmap, sdtp->next_client_port)) {
 			break;
 		}
 		sdtp->next_client_port++;

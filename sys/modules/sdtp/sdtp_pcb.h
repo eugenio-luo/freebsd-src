@@ -27,7 +27,6 @@ struct sdtp_interest {
  
     unsigned long ready_rpc;
 
-	/* only atomic operations access, it can potentially be negative */
     int locked_atomic;
 
     TAILQ_ENTRY(sdtp_interest) request_links;
@@ -131,6 +130,8 @@ struct sdtp_inpcb {
     void *reuse_ctx;
 };
 
+struct sdtp_inpcb *sdtp_find_inpcb(struct sdtp_pcbmap *pcbmap, uint16_t port);
+int sdtp_inpcb_bind(struct sdtp_pcbmap *pcbmap, uint16_t port, struct sdtp_inpcb *pcb);
 int sdtp_inpcb_alloc(struct socket *so, struct sdtp *sdtp);
 
 #endif

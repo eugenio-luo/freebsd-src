@@ -54,6 +54,43 @@ sdtp_attach(struct socket *so, int proto, struct thread *p)
     return error;
 }
 
+static int
+sdtp_bind(struct socket *so, struct sockaddr *addr, struct thread *p)
+{
+    struct sdtp_inpcb *inp;
+    uint16_t port;
+
+    inp = (struct sdtp_inpcb *) so->so_pcb;
+    if (inp == NULL) {
+        return EINVAL;
+    }
+
+    if (addr == NULL) {
+        return EINVAL;
+    }
+
+    if (addr->sa_family != so->so_proto->pr_domain->dom_family) {
+        return EAFNOSUPPORT;
+    }
+
+    switch (addr->sa_family) {
+    case AF_INET: {
+        struct sockaddr_in *sin = (struct sockaddr_in *)addr;
+        port = ntohs(sin->sin_port);
+        break;
+    }
+    case AF_INET6: {
+        struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)addr;
+        port = ntohs(sin6->sin6_port);
+        break;
+    }
+    default:
+		return EAFNOSUPPORT;
+    }
+
+    return sdtp_inpcb_bind(&inp->sdtp->port_map, port, inp);
+}
+
 //static int
 //sdtp_sendm(struct socket *so, int flags, struct mbuf *m, struct sockaddr *addr,
 //    struct mbuf *control, struct thread *p)
@@ -111,14 +148,13 @@ struct protosw sdtp_protosw = {
 	.pr_flags = 0,
 	.pr_protocol = IPPROTO_SDTP,
 	.pr_attach =	sdtp_attach,
-	.pr_soreceive =	sdtp_soreceive
+	.pr_bind =	    sdtp_bind,
 	//.pr_send =	sdtp_sendm,
 	/*
 	.pr_connect =	sdtp_connect,
 	.pr_ctloutput =	sdp_ctloutput,
 	.pr_abort =	sdp_abort,
 	.pr_accept =	sdp_accept,
-	.pr_bind =	sdp_bind,
 	.pr_control =	in_control,
 	.pr_close =	sctp_close,
 	.pr_detach =	sctp_close,
@@ -139,13 +175,13 @@ struct protosw sdtp6_protosw = {
 	.pr_flags = 0,
 	.pr_protocol = IPPROTO_SDTP,
 	.pr_attach =	sdtp_attach,
+	.pr_bind =	    sdtp_bind,
 	//.pr_send =	sdtp_sendm,
 	/*
 	.pr_connect =	sdtp_connect,
 	.pr_ctloutput =	sdp_ctloutput,
 	.pr_abort =	sdp_abort,
 	.pr_accept =	sdp_accept,
-	.pr_bind =	sdp_bind,
 	.pr_control =	in_control,
 	.pr_close =	sctp_close,
 	.pr_detach =	sctp_close,
