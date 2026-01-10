@@ -22,9 +22,11 @@
 #include <netinet/in.h>
 
 #include "sdtp_common.h"
+#include "sdtp.h"
 #include "sdtp_pcb.h"
 #include "sdtp_rpc.h"
 
+/*
 struct sockaddr_in_union {
     struct sockaddr_in  in4;
     struct sockaddr_in6 in6;
@@ -46,6 +48,7 @@ canonical_ipv6_addr(const struct sockaddr_in_union *addr)
 
     return res;
 }
+*/
 
 struct sdtp_core {
     uint64_t last_active;
@@ -68,12 +71,6 @@ struct sdtp_dead_dst {
     uint64_t gc_time;
     struct sdtp_dead_dst_tailq dst_links;
 };
-
-struct sdtp_ack {
-    uint64_t client_id_be;
-    uint16_t client_port_be;
-    uint16_t server_port_be;
-} __attribute__((packed));
 
 struct sdtp_peer {
     struct in6_addr addr;
@@ -240,6 +237,6 @@ int sdtp_uninit(struct sdtp *sdtp);
 void sdtp_interest_init(struct sdtp_interest *interest);
 
 int sdtp_inpcb_alloc(struct socket *so, struct sdtp *sdtp);
-struct sdtp_rpc *sdtp_rpc_new_client(struct sdtp_inpcb *pcb, const struct sockaddr_in_union *dest, int *error);
+//struct sdtp_rpc *sdtp_rpc_new_client(struct sdtp_inpcb *pcb, const struct sockaddr_in_union *dest, int *error);
 
 #endif 

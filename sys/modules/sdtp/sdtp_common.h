@@ -12,6 +12,11 @@
 
 #include <sys/queue.h>
 
+#define IPPROTO_SDTP 146
+#define SDTP_MAX_MESSAGE_LENGTH 1000000
+#define SDTP_MIN_PKT_LENGTH 26
+#define SDTP_MAX_HEADER 90
+
 #define SDTP_CACHE_LINE_SIZE 64
 #define SDTP_CACHE_ROUNDUP(x) ((x) + SDTP_CACHE_LINE_SIZE - 1) & ~(SDTP_CACHE_LINE_SIZE - 1)  
 
