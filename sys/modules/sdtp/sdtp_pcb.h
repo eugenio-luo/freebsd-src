@@ -21,6 +21,7 @@
 
 struct sdtp;
 struct sdtp_inpcb; 
+struct sdtp_rpc;
 
 struct sdtp_interest {
     struct thread *thread;
@@ -28,6 +29,8 @@ struct sdtp_interest {
     unsigned long ready_rpc;
 
     int locked_atomic;
+	
+    struct sdtp_rpc *reg_rpc;
 
     TAILQ_ENTRY(sdtp_interest) request_links;
     TAILQ_ENTRY(sdtp_interest) response_links;

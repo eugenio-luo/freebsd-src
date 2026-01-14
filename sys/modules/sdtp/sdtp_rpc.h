@@ -12,6 +12,7 @@
 
 #include <sys/mutex.h>
 
+#include "sdtp.h"
 #include "sdtp_common.h"
 #include "sdtp_pcb.h"
 
@@ -81,13 +82,13 @@ struct sdtp_message_in {
 struct sdtp_rpc {
     struct sdtp_inpcb *sdtpcb;
 
-	struct mtx spinlock;
+	struct mtx *spinlock;
 
     enum {
-        RPC_OUTGOING            = 5,
-		RPC_INCOMING            = 6,
-		RPC_IN_SERVICE          = 8,
-		RPC_DEAD                = 9
+        SDTP_RPC_OUTGOING            = 5,
+		SDTP_RPC_INCOMING            = 6,
+		SDTP_RPC_IN_SERVICE          = 8,
+		SDTP_RPC_DEAD                = 9
     } state;
 
     uint32_t flags_atomic;
@@ -110,15 +111,17 @@ struct sdtp_rpc {
     uint64_t id;
     uint64_t completion_cookie;
     int error;
-    
+
     struct sdtp_message_in msgin;
     struct sdtp_message_out msgout;
 
     LIST_ENTRY(sdtp_rpc) hash_links;
-    
-    struct sdtp_rpc_tailq ready_links;
-    struct sdtp_rpc_tailq active_links;
-	struct sdtp_rpc_tailq dead_links;
+
+    bool is_ready;
+
+    TAILQ_ENTRY(sdtp_rpc) ready_links;
+    TAILQ_ENTRY(sdtp_rpc) active_links;
+    TAILQ_ENTRY(sdtp_rpc) dead_links;
 
     struct sdtp_interest *interest;
 
@@ -138,5 +141,15 @@ struct sdtp_rpc {
 	void *rpc_offload_ctx_tx;
 	void *rpc_offload_ctx_rx;
 };
+
+// TODO: Not thread safe!!!
+static inline void
+insert_ready_rpc(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc)
+{
+    rpc->is_ready = true;
+    TAILQ_INSERT_TAIL(&pcb->ready_responses, rpc, ready_links);
+}
+
+void sdtp_handle_packet(struct mbuf *m, struct sdtp_common_header *header, struct in6_addr *addr, struct sdtp_inpcb *pcb);
 
 #endif
