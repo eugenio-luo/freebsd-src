@@ -116,5 +116,5 @@ static moduledata_t sdtp_mod = {
 	NULL,
 };
 
-DECLARE_MODULE(sdtp, sdtp_mod, SI_SUB_PROTO_IFATTACHDOMAIN, SI_ORDER_ANY);
+DECLARE_MODULE(sdtp, sdtp_mod, SI_SUB_PROTO_DOMAIN, SI_ORDER_ANY);
 MODULE_VERSION(sdtp, 1);
