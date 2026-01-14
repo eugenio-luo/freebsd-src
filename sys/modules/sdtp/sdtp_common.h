@@ -73,4 +73,19 @@ LIST_HEAD(sdtp_peer_list, sdtp_peer);
 
 TAILQ_HEAD(sdtp_dead_dst_tailq, sdtp_dead_dst);
 
+static inline void
+ipv4_to_ipv6(struct in_addr *from, struct in6_addr *to)
+{
+    memset(to, 0, sizeof(*to));
+    to->s6_addr[10] = 0xFF; 
+    to->s6_addr[11] = 0xFF; 
+    memcpy(&to->s6_addr[12], &from->s_addr, 4);
+}
+
+static inline bool
+is_ipv6_same(struct in6_addr *a, struct in6_addr *b)
+{
+    return memcmp(a, b, sizeof(struct in6_addr)) == 0;
+}
+
 #endif

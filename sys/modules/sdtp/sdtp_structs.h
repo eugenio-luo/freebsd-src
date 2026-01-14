@@ -186,9 +186,16 @@ struct sdtp_zones {
     sdtp_zone_t sdtp_zone_peer;
 };
 
-static inline struct sdtp_rpc_bucket *sdtp_client_rpc_bucket(struct sdtp_inpcb *pcb, uint64_t id)
+static inline struct sdtp_rpc_bucket *
+sdtp_client_rpc_bucket(struct sdtp_inpcb *pcb, uint64_t id)
 {
     return &pcb->client_rpc_buckets[(id >> 1) & (SDTP_CLIENT_RPC_BUCKETS - 1)];
+}
+
+static inline struct sdtp_rpc_bucket *
+sdtp_server_rpc_bucket(struct sdtp_inpcb *pcb, uint64_t id)
+{
+    return &pcb->server_rpc_buckets[(id >> 1) & (SDTP_SERVER_RPC_BUCKETS - 1)];
 }
 
 static inline int sdtp_port_hash(uint16_t port)
@@ -201,6 +208,5 @@ int sdtp_uninit(struct sdtp *sdtp);
 void sdtp_interest_init(struct sdtp_interest *interest);
 
 int sdtp_inpcb_alloc(struct socket *so, struct sdtp *sdtp);
-//struct sdtp_rpc *sdtp_rpc_new_client(struct sdtp_inpcb *pcb, const struct sockaddr_in_union *dest, int *error);
 
 #endif 
