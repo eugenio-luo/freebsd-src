@@ -61,6 +61,8 @@ sdtp_zone_init(void)
 	    sizeof(struct sdtp_inpcb), maxsockets);
     SDTP_ZONE_INIT(zones.sdtp_zone_rpc, "sdtp_rpc",
         sizeof(struct sdtp_rpc), MAX_SDTP_RPC);
+    SDTP_ZONE_INIT(zones.sdtp_zone_peer, "sdtp_peer",
+        sizeof(struct sdtp_peer), MAX_SDTP_PEER);
 
     return 0;
 }

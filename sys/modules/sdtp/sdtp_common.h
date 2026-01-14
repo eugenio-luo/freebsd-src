@@ -11,8 +11,12 @@
 #define _SDTP_COMMON_H_
 
 #include <sys/queue.h>
+#include <sys/libkern.h>
 
-#define IPPROTO_SDTP 146
+#include <netinet/in.h>
+
+// #define IPPROTO_SDTP 146
+// #define IPPROTO_SDTP 0xFD
 #define SDTP_MAX_MESSAGE_LENGTH 1000000
 #define SDTP_MIN_PKT_LENGTH 26
 #define SDTP_MAX_HEADER 90
@@ -23,6 +27,7 @@
 #define SDTP_MIN_DEFAULT_PORT 0x8000
 
 #define MAX_SDTP_RPC 0x4000
+#define MAX_SDTP_PEER 0x4000
 
 #define SDTP_CLIENT_RPC_BUCKETS 1024
 #define SDTP_SERVER_RPC_BUCKETS 1024

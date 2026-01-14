@@ -24,6 +24,7 @@
 #include "sdtp_common.h"
 #include "sdtp.h"
 #include "sdtp_pcb.h"
+#include "sdtp_peer.h"
 #include "sdtp_rpc.h"
 
 /*
@@ -70,44 +71,6 @@ struct sdtp_dead_dst {
     struct nhop_object *nh;
     uint64_t gc_time;
     struct sdtp_dead_dst_tailq dst_links;
-};
-
-struct sdtp_peer {
-    struct in6_addr addr;
-    struct nhop_object *nh;
-
-    int unsched_cutoffs[SDTP_MAX_PRIORITIES];
-    
-    uint16_t cutoff_version_be;
-
-    unsigned long last_update_jiffies;
-
-	struct sdtp_rpc_tailq grantable_rpcs;
-	struct sdtp_rpc_tailq grantable_links;
-
-    LIST_ENTRY(sdtp_peer) peermap_links;   
-
-    int outstanding_resends;
-    int most_recent_resend;
-    
-    struct sdtp_rpc *least_recent_rpc;
-
-    uint32_t least_recent_ticks;
-    uint32_t current_ticks;
-
-    struct sdtp_rpc *resend_rpc;
-
-    int num_acks;
-
-    struct sdtp_ack acks[NUM_PEER_UNACKED_IDS];
-
-    struct mtx ack_spinlock;
-};
-
-struct sdtp_peermap {
-    struct mtx write_spinlock;
-    struct sdtp_dead_dst_tailq dead_dsts;
-    struct sdtp_peer_list *buckets;
 };
 
 enum sdtp_freeze_type {
@@ -220,6 +183,7 @@ typedef struct uma_zone *sdtp_zone_t;
 struct sdtp_zones {
     sdtp_zone_t sdtp_zone_sock;
     sdtp_zone_t sdtp_zone_rpc;
+    sdtp_zone_t sdtp_zone_peer;
 };
 
 static inline struct sdtp_rpc_bucket *sdtp_client_rpc_bucket(struct sdtp_inpcb *pcb, uint64_t id)
