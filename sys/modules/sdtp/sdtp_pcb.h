@@ -116,7 +116,7 @@ struct sdtp_inpcb {
     struct sdtp_rpc_tailq active_rpcs;
     struct sdtp_rpc_tailq dead_rpcs;
     
-    int dead_skbs;
+    int dead_bufs;
 
     struct sdtp_rpc_tailq ready_requests;
     struct sdtp_rpc_tailq ready_responses;

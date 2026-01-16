@@ -116,7 +116,7 @@ sdtp_inpcb_alloc(struct socket *so, struct sdtp *sdtp)
 
     TAILQ_INIT(&inp->active_rpcs);
     TAILQ_INIT(&inp->dead_rpcs);
-    inp->dead_skbs = 0;
+    inp->dead_bufs = 0;
     TAILQ_INIT(&inp->ready_requests);
     TAILQ_INIT(&inp->ready_responses);
     TAILQ_INIT(&inp->request_interests);
