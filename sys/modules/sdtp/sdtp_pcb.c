@@ -18,7 +18,7 @@
 
 extern struct sdtp_zones zones;
 
-// TODO: Currently unsafe for readers!!!! There is no atomic guarantee
+// TODO: Currently using spinlocks for readers and pcb_init! Should be using RCU operations
 
 struct sdtp_inpcb *
 sdtp_find_inpcb(struct sdtp_pcbmap *pcbmap, uint16_t port)
@@ -26,7 +26,8 @@ sdtp_find_inpcb(struct sdtp_pcbmap *pcbmap, uint16_t port)
     struct sdtp_pcbmap_link *link;
     struct sdtp_inpcb *result = NULL;
 
-    // TODO: do we need `hlist_for_each_entry_rcu` here? 
+    mtx_lock_spin(&pcbmap->write_spinlock);
+
 	LIST_FOREACH(link, &pcbmap->buckets[sdtp_port_hash(port)], hash_links) {
         struct sdtp_inpcb *pcb = link->sock;
         if (pcb->port == port) {
@@ -34,6 +35,8 @@ sdtp_find_inpcb(struct sdtp_pcbmap *pcbmap, uint16_t port)
             break;
         }
     }
+    
+    mtx_unlock_spin(&pcbmap->write_spinlock);
 
 	return result;
 }
@@ -111,7 +114,6 @@ sdtp_inpcb_alloc(struct socket *so, struct sdtp *sdtp)
         LIST_INIT(&inp->ctx_buckets[i]);
     }
 
-    // TODO: what is the equivalent of hlist_add_head_rcu?
     TAILQ_INIT(&inp->active_rpcs);
     TAILQ_INIT(&inp->dead_rpcs);
     inp->dead_skbs = 0;
@@ -138,8 +140,6 @@ sdtp_inpcb_alloc(struct socket *so, struct sdtp *sdtp)
     inp->port = sdtp->next_client_port;
 	sdtp->next_client_port++;
 	inp->pcbmap_links.sock = inp;
-    
-    uprintf("socket created!\n");
 
     LIST_INSERT_HEAD(&pcbmap->buckets[sdtp_port_hash(inp->port)], &inp->pcbmap_links, hash_links);
 	

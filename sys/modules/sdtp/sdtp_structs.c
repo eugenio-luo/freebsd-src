@@ -21,7 +21,6 @@
 #include <machine/atomic.h>
 #include <sys/socketvar.h>
 
-// TODO: sxlock 
 /*
 
 struct sdtp_rpc *

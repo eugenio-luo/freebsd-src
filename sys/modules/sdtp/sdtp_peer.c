@@ -25,17 +25,10 @@ sdtp_find_peer(struct sdtp_peermap *peermap, struct in6_addr *addr, struct inpcb
     uint32_t bucket_idx = hash32_buf(addr, sizeof(struct in6_addr), HASHINIT);
     bucket_idx &= SDTP_PEERTAB_BUCKETS - 1;
 
-    // TODO: Read not atomically safe!!
-    LIST_FOREACH(peer, &peermap->buckets[bucket_idx], peermap_links) {
-        if (is_ipv6_same(&peer->addr, addr)) {
-            return peer;
-        }
-    }
-
     mtx_lock_spin(&peermap->write_spinlock);
     LIST_FOREACH(peer, &peermap->buckets[bucket_idx], peermap_links) {
         if (is_ipv6_same(&peer->addr, addr)) {
-            goto sdtp_find_peer_done;
+            return peer;
         }
     }
 

@@ -142,10 +142,12 @@ struct sdtp_rpc {
 	void *rpc_offload_ctx_rx;
 };
 
-// TODO: Not thread safe!!!
 static inline void
 insert_ready_rpc(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc)
 {
+    mtx_assert(&pcb->spinlock, MA_OWNED);
+    printf("calling insert_ready_rpc\n");
+
     rpc->is_ready = true;
     TAILQ_INSERT_TAIL(&pcb->ready_responses, rpc, ready_links);
 }
