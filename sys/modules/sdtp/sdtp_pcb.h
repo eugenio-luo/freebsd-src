@@ -18,6 +18,7 @@
 #include <netinet/in_pcb.h>
 
 #include "sdtp_common.h"
+#include "sdtp_pool.h"
 
 struct sdtp;
 struct sdtp_inpcb; 
@@ -26,12 +27,14 @@ struct sdtp_rpc;
 struct sdtp_interest {
     struct thread *thread;
  
-    unsigned long ready_rpc;
+    uintptr_t ready_rpc_atomic;
 
     int locked_atomic;
 	
     struct sdtp_rpc *reg_rpc;
 
+    int is_response_atomic;
+    int is_request_atomic;
     TAILQ_ENTRY(sdtp_interest) request_links;
     TAILQ_ENTRY(sdtp_interest) response_links;
 };
@@ -49,53 +52,6 @@ struct sdtp_pcbmap_link {
 struct sdtp_pcbmap {
     struct mtx write_spinlock;
     struct sdtp_pcbmap_link_list buckets[SDTP_PCBMAP_BUCKETS];
-};
-
-struct sdtp_cache_line {
-    char bytes[64];
-};
-
-struct sdtp_bpage {
-    union {
-        struct sdtp_cache_line cache_line;
-        struct {
-	        struct mtx spinlock;
-            uint32_t refs_atomic;
-            int owner;
-            uint64_t expiration;
-        };
-    };
-};
-CTASSERT(sizeof(struct sdtp_bpage) == sizeof(struct sdtp_cache_line));
-
-struct sdtp_pool_core {
-    union {
-        struct sdtp_cache_line cache_line;
-        struct {
-            int page_hint;
-            int allocated;
-            int next_candidate;
-        };
-    };
-};
-CTASSERT(sizeof(struct sdtp_pool_core) == sizeof(struct sdtp_cache_line));
-
-struct sdtp_pool {
-    struct sdtp *sdtp;
-
-    char *region;
-    int num_bpages;
-
-    struct sdtp_bpage *descriptors;
-
-    uint32_t free_bpages_atomic;
-
-    struct sdtp_pool_core *cores;
-    int num_cores;
-}; 
-
-struct sdtp_context {
-
 };
 
 struct sdtp_inpcb {
@@ -126,12 +82,52 @@ struct sdtp_inpcb {
 
     struct sdtp_rpc_bucket client_rpc_buckets[SDTP_CLIENT_RPC_BUCKETS];
     struct sdtp_rpc_bucket server_rpc_buckets[SDTP_SERVER_RPC_BUCKETS];
-    
+
     struct sdtp_pool buffer_pool;
 
     struct sdtp_context_list ctx_buckets[SDTP_SERVER_RPC_BUCKETS];
     void *reuse_ctx;
 };
+
+static inline void
+insert_response_interest(struct sdtp_inpcb *pcb, struct sdtp_interest *interest)
+{
+    mtx_assert(&pcb->spinlock, MA_OWNED);
+    MPASS(atomic_load_int(&interest->is_response_atomic) == false);
+
+    atomic_store_int(&interest->is_response_atomic, true);
+    TAILQ_INSERT_TAIL(&pcb->response_interests, interest, response_links);
+}
+
+static inline void
+remove_response_interest(struct sdtp_inpcb *pcb, struct sdtp_interest *interest)
+{
+    mtx_assert(&pcb->spinlock, MA_OWNED);
+    MPASS(atomic_load_int(&interest->is_response_atomic) == true);
+
+    TAILQ_REMOVE(&pcb->response_interests, interest, response_links);
+    atomic_store_int(&interest->is_response_atomic, false);
+}
+
+static inline void
+insert_request_interest(struct sdtp_inpcb *pcb, struct sdtp_interest *interest)
+{
+    mtx_assert(&pcb->spinlock, MA_OWNED);
+    MPASS(atomic_load_int(&interest->is_request_atomic) == false);
+
+    atomic_store_int(&interest->is_request_atomic, true);
+    TAILQ_INSERT_TAIL(&pcb->request_interests, interest, request_links);
+}
+
+static inline void
+remove_request_interest(struct sdtp_inpcb *pcb, struct sdtp_interest *interest)
+{
+    mtx_assert(&pcb->spinlock, MA_OWNED);
+    MPASS(atomic_load_int(&interest->is_request_atomic) == true);
+
+    TAILQ_REMOVE(&pcb->request_interests, interest, request_links);
+    atomic_store_int(&interest->is_request_atomic, false);
+}
 
 struct sdtp_inpcb *sdtp_find_inpcb(struct sdtp_pcbmap *pcbmap, uint16_t port);
 int sdtp_inpcb_bind(struct sdtp_pcbmap *pcbmap, uint16_t port, struct sdtp_inpcb *pcb);

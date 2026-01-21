@@ -18,20 +18,24 @@
 
 struct sdtp_peer;
 
-struct sdtp_packet {
-    struct mbuf *data;
-    uint32_t offset;
-    uint32_t length;
-};
-
 struct sdtp_packet_slist_entry {
-    struct sdtp_packet p;
-    SLIST_ENTRY(sdtp_packet_slist_entry) next;
+    /*
+     * it is guaranteed that all these mbufs 
+     * have sdtp_data_header as first bytes
+    */ 
+    struct mbuf *data;
+
+    SLIST_ENTRY(sdtp_packet_slist_entry) link;
 };
 
 struct sdtp_packet_tailq_entry {
-    struct sdtp_packet p;
-    TAILQ_ENTRY(sdtp_packet_tailq_entry) next;
+    /*
+     * it is guaranteed that all these mbufs 
+     * have sdtp_data_header as first bytes
+    */ 
+    struct mbuf *data;
+
+    TAILQ_ENTRY(sdtp_packet_tailq_entry) link;
 };
 
 struct sdtp_message_out {
@@ -61,13 +65,13 @@ struct sdtp_message_in {
 
     int bytes_remaining;
     int decrypt_offset;
-    struct sdtp_packet_tailq *decrypt_skb;
+    struct sdtp_packet_tailq *decrypt_bufs;
 	
     int gsoseg_offset;
 	int nextgsoseg_length;
 	int nextgsoseg_received; 
 
-    struct sdtp_packet_tailq *gsoseg_mbufq;
+    struct sdtp_packet_tailq *gsoseg_bufs;
 
     unsigned int max_pkt_data;
     int incoming;
@@ -82,7 +86,7 @@ struct sdtp_message_in {
 struct sdtp_rpc {
     struct sdtp_inpcb *sdtpcb;
 
-	struct mtx *spinlock;
+	struct mtx *spinlock_p;
 
     enum {
         SDTP_RPC_OUTGOING            = 5,
@@ -117,7 +121,7 @@ struct sdtp_rpc {
 
     LIST_ENTRY(sdtp_rpc) hash_links;
 
-    bool is_ready;
+    int is_ready_atomic;
 
     TAILQ_ENTRY(sdtp_rpc) ready_links;
     TAILQ_ENTRY(sdtp_rpc) active_links;
@@ -146,12 +150,24 @@ static inline void
 insert_ready_rpc(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc)
 {
     mtx_assert(&pcb->spinlock, MA_OWNED);
-    printf("calling insert_ready_rpc\n");
+    MPASS(atomic_load_int(&rpc->is_ready_atomic) == false);
 
-    rpc->is_ready = true;
+    atomic_store_int(&rpc->is_ready_atomic, true);
     TAILQ_INSERT_TAIL(&pcb->ready_responses, rpc, ready_links);
 }
 
+static inline void
+remove_ready_rpc(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc)
+{
+    mtx_assert(&pcb->spinlock, MA_OWNED);
+    MPASS(atomic_load_int(&rpc->is_ready_atomic) == true);
+
+    TAILQ_REMOVE(&pcb->ready_responses, rpc, ready_links);
+    atomic_store_int(&rpc->is_ready_atomic, false);
+}
+
+struct sdtp_rpc *sdtp_find_client_rpc(struct sdtp_inpcb *pcb, uint64_t id);
+bool sdtp_is_client(uint64_t id);
 void sdtp_handle_packet(struct mbuf *m, struct sdtp_common_header *header, struct in6_addr *addr, struct sdtp_inpcb *pcb);
 
 #endif

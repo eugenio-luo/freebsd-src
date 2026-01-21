@@ -7,7 +7,7 @@
  * under sponsorship from the FreeBSD Foundation.
  */
 
-#include "sdtp_structs.h" 
+#include "sdtp_structs.h"
 #include "sdtp_os.h"
 #include "sdtp.h"
 
@@ -20,34 +20,6 @@
 #include <machine/cpu.h>
 #include <machine/atomic.h>
 #include <sys/socketvar.h>
-
-/*
-
-struct sdtp_rpc *
-sdtp_rpc_new_client(struct sdtp_inpcb *pcb, const struct sockaddr_in_union *dest, int *error)
-{
-    struct sdtp_rpc *rpc;
-    //struct sdtp_rpc_bucket *bucket;
-    struct in6_addr dest_addr;
-
-    *error = 0;
-    dest_addr = canonical_ipv6_addr(dest);
-    
-    rw_wlock(&(base_info.sdtp_zone_rpc_lock));
-    rpc = SDTP_ZONE_GET(base_info.sdtp_zone_rpc, struct sdtp_rpc);
-    rw_wunlock(&(base_info.sdtp_zone_rpc_lock));
-    if (rpc == NULL) {
-        *error = ENOBUFS;
-        return NULL;
-    }
-
-    rpc->sdtpcb = pcb;
-    rpc->id = atomic_fetchadd_64(&pcb->sdtp->next_out_id, 2); 
-    
-    (void) dest_addr;
-    return rpc;
-}
-*/
 
 MALLOC_DEFINE(M_SDTP_PEERMAP, "sdtp peermap", "SDTP peermap buckets");
 DPCPU_DEFINE(struct sdtp_core, sdtp_cores);
@@ -62,6 +34,8 @@ sdtp_zone_init(void)
         sizeof(struct sdtp_rpc), MAX_SDTP_RPC);
     SDTP_ZONE_INIT(zones.sdtp_zone_peer, "sdtp_peer",
         sizeof(struct sdtp_peer), MAX_SDTP_PEER);
+    SDTP_ZONE_INIT(zones.sdtp_zone_packet_tailq_entry, "sdtp_packet_tailq_entry",
+        sizeof(struct sdtp_packet_tailq_entry), MAX_SDTP_PACKET_TAILQ_ENTRY);
 
     return 0;
 }
@@ -173,7 +147,7 @@ sdtp_struct_init(struct sdtp *sdtp)
 	sdtp->dead_buffs_limit = 5000;
 	sdtp->max_dead_buffs = 0;
 
-    // todo: pacer thread initialization 
+    // TODO: pacer thread initialization 
 
     sdtp->pacer_exit = false;
 	sdtp->max_nic_queue_ns = 2000;
@@ -204,7 +178,7 @@ sdtp_struct_init(struct sdtp *sdtp)
 int sdtp_init(struct sdtp *sdtp)
 {
     CTASSERT(SDTP_MAX_PRIORITIES >= 8);
-    
+
     int err;
 
     err = sdtp_zone_init();
@@ -214,6 +188,18 @@ int sdtp_init(struct sdtp *sdtp)
     return err;
 }
 
+void
+sdtp_interest_init(struct sdtp_interest *interest)
+{
+    interest->thread = curthread;
+    atomic_store_ptr(&interest->ready_rpc_atomic, 0);
+    atomic_store_int(&interest->locked_atomic, 0);
+    interest->reg_rpc = NULL;
+    atomic_store_int(&interest->is_response_atomic, false);
+    atomic_store_int(&interest->is_request_atomic, false);
+}
+
+// TODO: fix uninit
 int sdtp_uninit(struct sdtp *sdtp)
 {
     SDTP_ZONE_DESTROY(zones.sdtp_zone_sock);

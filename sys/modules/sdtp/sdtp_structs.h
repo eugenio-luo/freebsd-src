@@ -174,16 +174,13 @@ struct sdtp {
     int temp[4];
 };
 
-struct sdtp_crypto_info {
-    
-};
-
 typedef struct uma_zone *sdtp_zone_t;
 
 struct sdtp_zones {
     sdtp_zone_t sdtp_zone_sock;
     sdtp_zone_t sdtp_zone_rpc;
     sdtp_zone_t sdtp_zone_peer;
+    sdtp_zone_t sdtp_zone_packet_tailq_entry;
 };
 
 static inline struct sdtp_rpc_bucket *

@@ -23,8 +23,6 @@
 
 #include <machine/atomic.h>
 
-// TODO: fix whatever mess with sdtp_new_server_rpc() and sdtp_handoff_rpc()
-
 extern struct sdtp_zones zones;
 
 static uint64_t
@@ -33,20 +31,27 @@ sdtp_local_id(uint64_t sender_id_be)
     return be64toh(sender_id_be) ^ 1;
 }
 
-static bool
+bool
 sdtp_is_client(uint64_t id)
 {
     return (id & 1) == 0;
 }
 
+/*
+ * sdtp_handoff_rpc()
+ *
+ * pcb should be locked
+ */
 static void
 sdtp_handoff_rpc(struct sdtp_rpc *rpc)
 {
 	struct sdtp_interest *interest;
     struct sdtp_inpcb *pcb = rpc->sdtpcb;
 
+    mtx_assert(&pcb->spinlock, MA_OWNED);
+
     if ((atomic_load_32(&rpc->flags_atomic) & RPC_HANDING_OFF)
-        || rpc->is_ready)
+        || atomic_load_int(&rpc->is_ready_atomic))
     {
         return;
     }
@@ -63,10 +68,13 @@ sdtp_handoff_rpc(struct sdtp_rpc *rpc)
         }
         insert_ready_rpc(pcb, rpc);
     } else {
+        printf("check for interest!\n");
         interest = TAILQ_FIRST(&pcb->request_interests);
         if (interest) {
+            printf("yes interest!\n");
             goto sdtp_handoff_rpc_waiting;
         }
+        printf("no interest!\n");
         insert_ready_rpc(pcb, rpc);
     }
 
@@ -76,23 +84,25 @@ sdtp_handoff_rpc(struct sdtp_rpc *rpc)
 sdtp_handoff_rpc_waiting:
     atomic_set_32(&rpc->flags_atomic, RPC_HANDING_OFF);
     atomic_store_32(&interest->locked_atomic, 0);
-    atomic_store_rel_long(&interest->ready_rpc, (long) rpc);
+    atomic_store_rel_ptr(&interest->ready_rpc_atomic, (uintptr_t) rpc);
 
     if (interest->reg_rpc) {
         interest->reg_rpc->interest = NULL;
         interest->reg_rpc = NULL;
     }
-    if (interest->request_links.tqe_prev != NULL) {
-        TAILQ_REMOVE(&pcb->request_interests, interest, request_links);
+
+    if (atomic_load_int(&interest->is_request_atomic)) {
+        remove_request_interest(pcb, interest);
     }
-    if (interest->response_links.tqe_prev != NULL) {
-        TAILQ_REMOVE(&pcb->response_interests, interest, response_links);
+    if (atomic_load_int(&interest->is_response_atomic)) {
+        remove_response_interest(pcb, interest);
     }
-    // TODO: I'm not sure if this is the correct function?
+
+    printf("do we reach here?\n");
     wakeup(&interest->thread);
 }
 
-static struct sdtp_rpc *
+struct sdtp_rpc *
 sdtp_find_client_rpc(struct sdtp_inpcb *pcb, uint64_t id)
 {
     struct sdtp_rpc *rpc = NULL;
@@ -152,7 +162,7 @@ sdtp_new_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, struct sdtp
     }
 
     rpc->sdtpcb = pcb;
-    rpc->spinlock = &bucket->spinlock;
+    rpc->spinlock_p = &bucket->spinlock;
     rpc->state = SDTP_RPC_INCOMING;
     atomic_store_32(&rpc->flags_atomic, 0);
     atomic_store_32(&rpc->grants_in_progress_atomic, 0);
@@ -164,7 +174,7 @@ sdtp_new_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, struct sdtp
     rpc->id = id;
     rpc->completion_cookie = 0;
 	rpc->error = 0;
-    rpc->is_ready = false;
+    atomic_store_int(&rpc->is_ready_atomic, false);
 	rpc->msgin.total_length = -1;
 	rpc->msgin.num_bufs = 0;
 	rpc->msgin.num_bpages = 0;
@@ -187,6 +197,7 @@ sdtp_new_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, struct sdtp
     }
 
     // TODO: HomaLS context initialization
+    // rpc->ctx = set_rpc_context();
 
     LIST_INSERT_HEAD(&bucket->rpcs, rpc, hash_links);
     TAILQ_INSERT_TAIL(&pcb->active_rpcs, rpc, active_links);
@@ -209,11 +220,92 @@ sdtp_new_server_rpc_error:
 }
 
 static void
+sdtp_message_in_init(struct sdtp_message_in *msgin, int length, int incoming)
+{
+    msgin->total_length = length;
+    TAILQ_INIT(&msgin->packets);
+    msgin->num_bufs = 0;
+    msgin->bytes_remaining = length;
+	msgin->gsoseg_offset = 0;
+	msgin->decrypt_offset = 0;
+	msgin->gsoseg_bufs = &msgin->packets;
+	msgin->decrypt_bufs = &msgin->packets;
+	msgin->max_pkt_data = 0;
+	msgin->nextgsoseg_length = 0;
+	msgin->nextgsoseg_received = 0;
+	msgin->incoming = (incoming > length) ? length : incoming;
+	msgin->priority = 0;
+	msgin->scheduled = length > incoming;
+	msgin->copied_out = 0;
+	msgin->num_bpages = 0;
+}
+
+/*
+ * sdtp_add_packet()
+ *
+ * rpc need to be locked
+ */
+static void
+sdtp_add_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_data_header *header)
+{
+    mtx_assert(rpc->spinlock_p, MA_OWNED);
+
+    struct sdtp_packet_tailq_entry *packet, *new;
+    int offset = ntohl(header->data_segment.offset_be);
+    int data_bytes = ntohl(header->data_segment.segment_length_be);
+
+    int floor = rpc->msgin.copied_out;
+    int ceiling = rpc->msgin.total_length;
+
+    TAILQ_FOREACH_REVERSE(packet, &rpc->msgin.packets, sdtp_packet_tailq, link) {
+        struct sdtp_data_header *h = mtod(packet->data, struct sdtp_data_header *);
+        int tmp_off = ntohl(h->data_segment.offset_be);
+        int tmp_dbytes = ntohl(h->data_segment.segment_length_be);
+        if (tmp_off < offset) {
+            floor = tmp_off + tmp_dbytes;
+            break;
+        }
+        ceiling = tmp_off;
+    }
+
+    if ((offset < floor) || (offset + data_bytes > ceiling)) {
+        m_freem(m);
+        return;
+    }
+
+    if (header->retransmit) {
+        (void) header;
+        //TODO: homa_freeze()
+    }
+
+    new = SDTP_ZONE_GET(zones.sdtp_zone_packet_tailq_entry, struct sdtp_packet_tailq_entry);
+    new->data = m;
+
+    if (packet) {
+        TAILQ_INSERT_AFTER(&rpc->msgin.packets, packet, new, link);
+    } else {
+        TAILQ_INSERT_HEAD(&rpc->msgin.packets, new, link);
+    }
+
+    rpc->msgin.bytes_remaining -= data_bytes;
+    rpc->msgin.num_bufs++;
+
+    printf("bytes: %d, num_bufs: %d\n", rpc->msgin.bytes_remaining, rpc->msgin.num_bufs);
+}
+
+/*
+ * sdtp_data_packet()
+ *
+ * rpc need to be locked
+ */
+static int 
 sdtp_data_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_data_header *header, struct sdtp_inpcb *pcb)
 {
-    /*
+    mtx_assert(rpc->spinlock_p, MA_OWNED);
+
     struct sdtp *sdtp = pcb->sdtp;
     bool rpc_handoff = false;
+    int old_remaining, incoming_delta = 0;
 
     if (rpc->state != SDTP_RPC_INCOMING) {
         if (sdtp_is_client(rpc->id)) {
@@ -229,35 +321,82 @@ sdtp_data_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_data_header *
     }
 
     if (rpc->msgin.total_length < 0) {
+        sdtp_message_in_init(&rpc->msgin, ntohl(header->message_length_be), ntohl(header->incoming_be));
+        incoming_delta += rpc->msgin.incoming;
+
+        if (rpc->ctx) {
+		    /* TODO: Set sdtp_max_pkt_data for first data packet */
+            (void) rpc->ctx;
+        }
     }
 
+    old_remaining = rpc->msgin.bytes_remaining;
+    if (rpc->ctx) {
+        // TODO: sdtp_add_packet()
+        (void) rpc->ctx;
+    } else {
+        (void) rpc->ctx;
+        sdtp_add_packet(m, rpc, header);
+    }
+    incoming_delta -= old_remaining - rpc->msgin.bytes_remaining;
+
+    if (rpc->ctx) {
+        (void) rpc->ctx;
+        // TODO: rpc_handoff = 
+    } else {
+        rpc_handoff = !(atomic_load_32(&rpc->flags_atomic) & RPC_PKTS_READY);
+    }
+
+    printf("is this handoff? %d\n", rpc_handoff);
     if (rpc_handoff) {
+        atomic_set_32(&rpc->flags_atomic, RPC_PKTS_READY);
+        mtx_lock_spin(&pcb->spinlock);
         sdtp_handoff_rpc(rpc);
+        mtx_unlock_spin(&pcb->spinlock);
     }
 
-    return;
+    if (rpc->msgin.scheduled) {
+		(void) rpc;
+        // TODO: homa_check_grantable(homa, rpc);
+    }
+
+    if (ntohs(header->cutoff_version_be) !=sdtp->cutoff_version) {
+        (void) rpc;
+        //TODO: The sender has out-of-date cutoffs
+    }
+
+    return incoming_delta;
 
 sdtp_data_packet_error:
     m_freem(m);
-    */
-    sdtp_handoff_rpc(rpc);
-    return;
+    return incoming_delta;
+}
+
+static void
+sdtp_reap_rpc(struct sdtp_inpcb *pcb, int count)
+{
 }
 
 void
 sdtp_handle_packet(struct mbuf *m, struct sdtp_common_header *header, struct in6_addr *source, struct sdtp_inpcb *pcb)
 {
-    // TODO: implement sdtp_lock_cache?
-    // I don't think we need it for now if we are only processing one at a time anyway
-    // but if I don't implement it, then I need to start locking the RPC itself?
+    // TODO: For now without sdtp_lock_cache, I lock the rpc lock
 
     int error = 0;
     uint64_t id = sdtp_local_id(header->sender_id_be);
+    struct sdtp *sdtp = pcb->sdtp;
     struct sdtp_rpc *rpc;
 
+    printf("is server: %d, type: %x, size: %d\n", !sdtp_is_client(id), header->type, m->m_pkthdr.len);
     if (!sdtp_is_client(id)) {
         if (header->type == SDTP_DATA) {
-            rpc = sdtp_new_server_rpc(pcb, source, (struct sdtp_data_header *) header, &error);
+            m = m_pullup(m, sizeof(struct sdtp_data_header));
+            if (!m) {
+                goto sdtp_handle_packet_error;
+            }
+            struct sdtp_data_header *data_header = mtod(m, struct sdtp_data_header *);
+
+            rpc = sdtp_new_server_rpc(pcb, source, data_header, &error);
             if (error) {
                 rpc = NULL;
                 goto sdtp_handle_packet_error;
@@ -286,7 +425,17 @@ sdtp_handle_packet(struct mbuf *m, struct sdtp_common_header *header, struct in6
     printf("sdtp_header type: %x, sport: %d\n", header->type, ntohs(header->sport_be));
     switch (header->type) {
     case SDTP_DATA: {
-        sdtp_data_packet(m, rpc, (struct sdtp_data_header *) header, pcb);
+        m = m_pullup(m, sizeof(struct sdtp_data_header));
+        if (!m) {
+            break;
+        }
+        struct sdtp_data_header *data_header = mtod(m, struct sdtp_data_header *);
+
+        int incoming_delta = sdtp_data_packet(m, rpc, data_header, pcb);
+        atomic_add_64(&sdtp->total_incoming_atomic, incoming_delta);
+        mtx_unlock_spin(rpc->spinlock_p);
+
+        // TODO: sdtp_rpc_reap
         break;
     }
 
@@ -297,5 +446,7 @@ sdtp_handle_packet(struct mbuf *m, struct sdtp_common_header *header, struct in6
     return;
 
 sdtp_handle_packet_error:
-    m_freem(m);
+    if (m) {
+        m_freem(m);
+    }
 }

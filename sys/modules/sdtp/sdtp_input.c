@@ -65,16 +65,15 @@ sdtp_input(struct mbuf **mp, int *offp, int proto)
 
     /* Adjust the buffer so we don't have the ip header anymore!! */
     m_adj(m, iphlen);
+    m = m_pullup(m, sizeof(struct sdtp_common_header));
+    if (!m) {
+        goto sdtp_input_done;
+    }
+    sdtp_header = mtod(m, struct sdtp_common_header *);
     sdtp_handle_packet(m, sdtp_header, &addr, pcb);
 
 sdtp_input_done:
-    /*
-	homa_lcache_release(&lcache);
-	atomic_add(incoming_delta, &homa->total_incoming);
-	homa_send_grants(homa);
-	atomic_dec(&homa_cores[raw_smp_processor_id()]->softirq_backlog);
-	INC_METRIC(softirq_cycles, get_cycles() - start);
-    */
+    // TODO: add sdtp_send_grants(sdtp);
     if (m) {
         m_free(m);
     }
