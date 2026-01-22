@@ -171,7 +171,6 @@ sdtp_struct_init(struct sdtp *sdtp)
 	sdtp->hardware_state_threshold = 1;
 	strncpy(sdtp->hardware_interface, "enp1s0f0np0", sizeof(sdtp->hardware_interface) - 1);
 
-    uprintf("sdtp_init(): %lu\n", sizeof(struct sdtp));
     return err;
 }
 

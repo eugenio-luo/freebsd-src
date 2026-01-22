@@ -148,8 +148,6 @@ sdtp_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc)
 #define MAX_BUFS 20
     struct mbuf *bufs[MAX_BUFS];
 
-    uprintf("sdtp_copy_to_user called!\n");
-
     int error = 0, n = 0;
 
     while (true) {
@@ -162,7 +160,6 @@ sdtp_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc)
         }
 
         struct mbuf *buf = buf_entry->data;
-        uprintf("buf: %lx, tot_len: %d\n", (uintptr_t) buf, rpc->msgin.total_length);
 
         if (buf->m_len < sizeof(struct sdtp_data_header)) {
             goto sdtp_copy_to_user_copy;
@@ -205,7 +202,6 @@ sdtp_copy_to_user_copy:
             if (!buf) {
                 continue;
             }
-            uprintf("first pullup size: rem: %d, bytes: %lu\n", buf->m_len, sizeof(struct sdtp_data_header));
             header = mtod(buf, struct sdtp_data_header *); 
             int rem = ntohl(header->data_segment.segment_length_be);
 
@@ -218,7 +214,6 @@ sdtp_copy_to_user_copy:
             for (; m != NULL && uio->uio_resid > 0 && rem > 0; m = m->m_next) {
                 int len = min(m->m_len, uio->uio_resid);
                 len = min(m->m_len, rem);
-                uprintf("len: %d, rem: %d\n", len, rem);
 
                 error = uiomove(mtod(m, char *), len, uio);
                 if (error) {
@@ -294,10 +289,8 @@ sdtp_wait_for_message(struct sdtp_inpcb *pcb, int flags, uint64_t id, struct uio
 
         rpc = (struct sdtp_rpc *) atomic_load_ptr(&interest.ready_rpc_atomic);
         if (rpc == NULL && !pcb->shutdown) {
-            uprintf("im going to sleep!\n");
             tsleep(&interest.thread, PCATCH, "sdtp_pool", 0);
         }
-        uprintf("i woke up!\n");
 
 sdtp_wait_for_message_found_rpc:
         if (interest.reg_rpc != NULL
@@ -342,7 +335,6 @@ sdtp_wait_for_message_found_rpc:
 
             atomic_clear_32(&rpc->flags_atomic, RPC_PKTS_READY);
 
-            uprintf("copied_out: %d, total_length: %d\n", rpc->msgin.copied_out, rpc->msgin.total_length);
             if (rpc->msgin.copied_out == rpc->msgin.total_length) {
                 goto sdtp_wait_for_message_done;
             }
@@ -372,7 +364,7 @@ sdtp_soreceive(struct socket *so,
         return EINVAL;
     }
 
-    // TODO: sdtp_pool_release_bpages
+    // TODO: we don't use sdtp_pool_release_bpages?
 
     rpc = sdtp_wait_for_message(inp, 0, 0, uio, &res);
     if (res) {

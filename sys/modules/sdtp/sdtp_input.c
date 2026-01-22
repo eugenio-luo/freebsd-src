@@ -57,7 +57,6 @@ sdtp_input(struct mbuf **mp, int *offp, int proto)
             icmp_error(m, ICMP_UNREACH, ICMP_UNREACH_PORT, 0, 0);
         }
 
-        printf("not found header?\n");
         goto sdtp_input_done;
     }
 

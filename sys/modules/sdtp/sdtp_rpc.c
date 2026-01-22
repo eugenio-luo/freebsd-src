@@ -12,6 +12,7 @@
 #include "sdtp_rpc.h"
 #include "sdtp_structs.h"
 #include "sdtp_peer.h"
+#include "sdtp_debug.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -68,13 +69,10 @@ sdtp_handoff_rpc(struct sdtp_rpc *rpc)
         }
         insert_ready_rpc(pcb, rpc);
     } else {
-        printf("check for interest!\n");
         interest = TAILQ_FIRST(&pcb->request_interests);
         if (interest) {
-            printf("yes interest!\n");
             goto sdtp_handoff_rpc_waiting;
         }
-        printf("no interest!\n");
         insert_ready_rpc(pcb, rpc);
     }
 
@@ -98,7 +96,6 @@ sdtp_handoff_rpc_waiting:
         remove_response_interest(pcb, interest);
     }
 
-    printf("do we reach here?\n");
     wakeup(&interest->thread);
 }
 
@@ -290,7 +287,6 @@ sdtp_add_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_data_header *h
     rpc->msgin.bytes_remaining -= data_bytes;
     rpc->msgin.num_bufs++;
 
-    printf("bytes: %d, num_bufs: %d\n", rpc->msgin.bytes_remaining, rpc->msgin.num_bufs);
 }
 
 /*
@@ -302,6 +298,8 @@ static int
 sdtp_data_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_data_header *header, struct sdtp_inpcb *pcb)
 {
     mtx_assert(rpc->spinlock_p, MA_OWNED);
+
+    sdtp_data_header_debug(header, NULL);
 
     struct sdtp *sdtp = pcb->sdtp;
     bool rpc_handoff = false;
@@ -347,7 +345,6 @@ sdtp_data_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_data_header *
         rpc_handoff = !(atomic_load_32(&rpc->flags_atomic) & RPC_PKTS_READY);
     }
 
-    printf("is this handoff? %d\n", rpc_handoff);
     if (rpc_handoff) {
         atomic_set_32(&rpc->flags_atomic, RPC_PKTS_READY);
         mtx_lock_spin(&pcb->spinlock);
@@ -387,7 +384,8 @@ sdtp_handle_packet(struct mbuf *m, struct sdtp_common_header *header, struct in6
     struct sdtp *sdtp = pcb->sdtp;
     struct sdtp_rpc *rpc;
 
-    printf("is server: %d, type: %x, size: %d\n", !sdtp_is_client(id), header->type, m->m_pkthdr.len);
+    sdtp_header_debug(header, "is_client: %d\n", sdtp_is_client(id));
+
     if (!sdtp_is_client(id)) {
         if (header->type == SDTP_DATA) {
             m = m_pullup(m, sizeof(struct sdtp_data_header));
@@ -422,7 +420,6 @@ sdtp_handle_packet(struct mbuf *m, struct sdtp_common_header *header, struct in6
         // TODO: implement frozen
     }
 
-    printf("sdtp_header type: %x, sport: %d\n", header->type, ntohs(header->sport_be));
     switch (header->type) {
     case SDTP_DATA: {
         m = m_pullup(m, sizeof(struct sdtp_data_header));
