@@ -15,26 +15,29 @@
 #include <sys/param.h>
 #include <sys/kernel.h>
 #include <sys/syslog.h>
+#include <sys/systm.h>
 
 #include "sdtp_pcb.h"
 #include "sdtp_rpc.h"
 #include "sdtp.h"
 
+#define SDTP_DEBUG_LOG_LEVEL LOG_INFO
+
 static inline void
-sdtp_vdebug(int pri, const char *fmt, va_list args)
+sdtp_vdebug(const char *fmt, va_list args)
 {
 #ifdef SDTP_DEBUG
-    vlog(pri, fmt, args);
+    vlog(SDTP_DEBUG_LOG_LEVEL, fmt, args);
 #endif
 }
 
 static inline void
-sdtp_debug(int pri, const char *fmt, ...)
+sdtp_debug(const char *fmt, ...)
 {
 #ifdef SDTP_DEBUG
     va_list args;
     va_start(args, fmt);
-    sdtp_vdebug(pri, fmt, args);
+    sdtp_vdebug(fmt, args);
     va_end(args);
 #endif
 }
@@ -70,29 +73,41 @@ header_type_to_string(uint8_t type)
     }
 }
 
+#define BUF_SIZE 256
+
+static inline void
+sdtp_opt_fmt_print(char *buf, int len, const char *fmt, va_list args)
+{
+#ifdef SDTP_DEBUG
+    if (len < BUF_SIZE) {
+        if (fmt) {
+            buf[len++] = ':';
+            buf[len++] = ' ';
+
+            vsnprintf(buf + len, BUF_SIZE - len, fmt, args);
+        }
+    }
+
+    sdtp_debug("%s\n", buf);
+#endif
+}
+
 static inline void
 sdtp_rpc_debug(struct sdtp_rpc *rpc, const char *fmt, ...)
 {
 #ifdef SDTP_DEBUG
-    char buf[256];
+    char buf[BUF_SIZE];
     va_list args;
     int len;
 
-    len = snprintf(buf, sizeof(buf), "RPC %lu [ dport %d, state %s, error %d ]",
+    len = snprintf(buf, sizeof(buf), "RPC %lu [ dport: %d, state: %s, error: %d ]",
            rpc->id, rpc->dport,
            rpc_flag_to_string(atomic_load_32(&rpc->flags_atomic)),
            rpc->error);
 
-    if (fmt && len < sizeof(buf)) {
-        buf[len++] = ':';
-        buf[len++] = ' ';
-
-        va_start(args, fmt);
-        vsnprintf(buf + len, sizeof(buf) - len, fmt, args);
-        va_end(args);
-    }
-
-    sdtp_debug(LOG_INFO, "%s", buf);
+    va_start(args, fmt);
+    sdtp_opt_fmt_print(&buf[0], len, fmt, args);
+    va_end(args);
 #endif
 }
 
@@ -100,23 +115,16 @@ static inline void
 sdtp_pcb_debug(struct sdtp_inpcb *pcb, const char *fmt, ...)
 {
 #ifdef SDTP_DEBUG
-    char buf[256];
+    char buf[BUF_SIZE];
     va_list args;
     int len;
 
-    len = snprintf(buf, sizeof(buf), "PCB %#lx [ port %d ]",
+    len = snprintf(buf, sizeof(buf), "PCB %#lx [ port: %d ]",
                    (uintptr_t) pcb, pcb->port);
 
-    if (fmt && len < sizeof(buf)) {
-        buf[len++] = ':';
-        buf[len++] = ' ';
-
-        va_start(args, fmt);
-        vsnprintf(buf + len, sizeof(buf) - len, fmt, args);
-        va_end(args);
-    }
-
-    sdtp_debug(LOG_INFO, "%s", buf);
+    va_start(args, fmt);
+    sdtp_opt_fmt_print(&buf[0], len, fmt, args);
+    va_end(args);
 #endif
 }
 
@@ -124,7 +132,7 @@ static inline void
 sdtp_header_debug(struct sdtp_common_header *header, const char *fmt, ...)
 {
 #ifdef SDTP_DEBUG
-    char buf[256];
+    char buf[BUF_SIZE];
     va_list args;
     int len;
 
@@ -132,16 +140,9 @@ sdtp_header_debug(struct sdtp_common_header *header, const char *fmt, ...)
                ntohs(header->sport_be), ntohs(header->dport_be),
                header_type_to_string(header->type));
 
-    if (fmt && len < sizeof(buf)) {
-        buf[len++] = ':';
-        buf[len++] = ' ';
-
-        va_start(args, fmt);
-        vsnprintf(buf + len, sizeof(buf) - len, fmt, args);
-        va_end(args);
-    }
-
-    sdtp_debug(LOG_INFO, "%s", buf);
+    va_start(args, fmt);
+    sdtp_opt_fmt_print(&buf[0], len, fmt, args);
+    va_end(args);
 #endif
 }
 
@@ -149,7 +150,7 @@ static inline void
 sdtp_data_header_debug(struct sdtp_data_header *header, const char *fmt, ...)
 {
 #ifdef SDTP_DEBUG
-    char buf[256];
+    char buf[BUF_SIZE];
     va_list args;
     int len;
 
@@ -157,17 +158,28 @@ sdtp_data_header_debug(struct sdtp_data_header *header, const char *fmt, ...)
                ntohs(header->common.sport_be), ntohs(header->common.dport_be),
                ntohl(header->message_length_be));
 
-    if (fmt && len < sizeof(buf)) {
-        buf[len++] = ':';
-        buf[len++] = ' ';
-
-        va_start(args, fmt);
-        vsnprintf(buf + len, sizeof(buf) - len, fmt, args);
-        va_end(args);
-    }
-
-    sdtp_debug(LOG_INFO, "%s", buf);
+    va_start(args, fmt);
+    sdtp_opt_fmt_print(&buf[0], len, fmt, args);
+    va_end(args);
 #endif
 }
+
+#define MBUF_LEN_ASSERT(M, HEADER_TYPE) \
+    do { \
+        KASSERT((M)->m_len >= (int32_t)sizeof(HEADER_TYPE), \
+                ("mbuf " #M " (m_len %d) should be at least size of " #HEADER_TYPE " (size: %zu)", \
+                (M)->m_len, sizeof(HEADER_TYPE))); \
+    } while (0)
+
+#define VALID_PCB_ASSERT(PCB) \
+    do { \
+        KASSERT(PCB != NULL, ("pcb " #PCB " should be valid")); \
+        KASSERT((PCB)->sdtp != NULL, ("pcb " #PCB " should contain valid sdtp")); \
+    } while (0)
+
+#define VALID_RPC_ASSERT(RPC) \
+    do { \
+        KASSERT(RPC != NULL, ("rpc " #RPC " should be valid")); \
+    } while (0)
 
 #endif

@@ -11,5 +11,6 @@ OPT_FLAGS+= -DSDTP_DEBUG
 .endif
 
 CFLAGS= ${OPT_FLAGS}
+CFLAGS+= -DINVARIANTS -DINVARIANT_SUPPORT
 
 .include <bsd.kmod.mk>
