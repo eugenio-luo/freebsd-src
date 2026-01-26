@@ -182,4 +182,14 @@ sdtp_data_header_debug(struct sdtp_data_header *header, const char *fmt, ...)
         KASSERT(RPC != NULL, ("rpc " #RPC " should be valid")); \
     } while (0)
 
+#define RPC_LOCK_OWNED(RPC) \
+    do { \
+        mtx_assert((RPC)->spinlock_p, MA_OWNED); \
+    } while (0)
+
+#define RPC_LOCK_NOTOWNED(RPC) \
+    do { \
+        mtx_assert((RPC)->spinlock_p, MA_NOTOWNED); \
+    } while (0)
+
 #endif
