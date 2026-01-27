@@ -23,10 +23,10 @@ extern struct sdtp_zones zones;
 struct sdtp_inpcb *
 sdtp_find_inpcb(struct sdtp_pcbmap *pcbmap, uint16_t port)
 {
+    mtx_assert(&pcbmap->write_spinlock, MA_OWNED);
+
     struct sdtp_pcbmap_link *link;
     struct sdtp_inpcb *result = NULL;
-
-    mtx_lock_spin(&pcbmap->write_spinlock);
 
 	LIST_FOREACH(link, &pcbmap->buckets[sdtp_port_hash(port)], hash_links) {
         struct sdtp_inpcb *pcb = link->sock;
@@ -35,8 +35,6 @@ sdtp_find_inpcb(struct sdtp_pcbmap *pcbmap, uint16_t port)
             break;
         }
     }
-    
-    mtx_unlock_spin(&pcbmap->write_spinlock);
 
 	return result;
 }

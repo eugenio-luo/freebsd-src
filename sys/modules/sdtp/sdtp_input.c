@@ -51,7 +51,11 @@ sdtp_input(struct mbuf **mp, int *offp, int proto)
     // TODO: Implement FREEZE packet here?
 
     dport = ntohs(sdtp_header->dport_be);
+
+    mtx_lock_spin(&sdtp->port_map.write_spinlock);
     pcb = sdtp_find_inpcb(&sdtp->port_map, dport);
+    mtx_unlock_spin(&sdtp->port_map.write_spinlock);
+
     if (!pcb) {
         if (ip_header->ip_v == IPVERSION) {
             icmp_error(m, ICMP_UNREACH, ICMP_UNREACH_PORT, 0, 0);
