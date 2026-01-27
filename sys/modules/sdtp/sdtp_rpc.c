@@ -26,6 +26,26 @@
 
 extern struct sdtp_zones zones;
 
+void
+sdtp_rpc_lock(struct sdtp_rpc *rpc)
+{
+    sdtp_rpc_debug(rpc, "locked by %#lx", (uintptr_t)curthread);
+    mtx_lock_spin(rpc->spinlock_p);
+}
+
+void
+sdtp_rpc_unlock(struct sdtp_rpc *rpc)
+{
+    mtx_unlock_spin(rpc->spinlock_p);
+    sdtp_rpc_debug(rpc, "unlocked by %#lx", (uintptr_t)curthread);
+}
+
+void sdtp_free_mbuf(struct mbuf *buf)
+{
+    sdtp_debug("buf %#lx free'd", (uintptr_t) buf);
+    m_freem(buf);
+}
+
 static uint64_t
 sdtp_local_id(uint64_t sender_id_be)
 {
