@@ -417,6 +417,13 @@ sdtp_bind(struct socket *so, struct sockaddr *addr, struct thread *p)
     return sdtp_inpcb_bind(&inp->sdtp->port_map, port, inp);
 }
 
+static void
+sdtp_close(struct socket *so)
+{
+    so->so_pcb = NULL;
+}
+
+
 //static int
 //sdtp_sendm(struct socket *so, int flags, struct mbuf *m, struct sockaddr *addr,
 //    struct mbuf *control, struct thread *p)
@@ -476,6 +483,7 @@ struct protosw sdtp_protosw = {
 	.pr_attach =	sdtp_attach,
 	.pr_soreceive =	sdtp_soreceive,
 	.pr_bind =	    sdtp_bind,
+	.pr_close =	sdtp_close,
 	//.pr_ctloutput =	sdtp_ctloutput,
 	//.pr_send =	sdtp_sendm,
 	/*
@@ -483,7 +491,6 @@ struct protosw sdtp_protosw = {
 	.pr_abort =	sdp_abort,
 	.pr_accept =	sdp_accept,
 	.pr_control =	sdtp_control,
-	.pr_close =	sctp_close,
 	.pr_detach =	sctp_close,
 	.pr_disconnect = sctp_disconnect,
 	.pr_listen =	sctp_listen,
@@ -504,6 +511,7 @@ struct protosw sdtp6_protosw = {
 	.pr_attach =	sdtp_attach,
 	.pr_soreceive =	sdtp_soreceive,
 	.pr_bind =	    sdtp_bind,
+	.pr_close =	sdtp_close,
 	//.pr_ctloutput =	sdtp_ctloutput,
 	//.pr_send =	sdtp_sendm,
 	/*
@@ -511,7 +519,6 @@ struct protosw sdtp6_protosw = {
 	.pr_abort =	sdp_abort,
 	.pr_accept =	sdp_accept,
 	.pr_control =	sdtp_control,
-	.pr_close =	sctp_close,
 	.pr_detach =	sctp_close,
 	.pr_disconnect = sctp_disconnect,
 	.pr_listen =	sctp_listen,
