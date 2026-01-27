@@ -68,8 +68,7 @@ sdtp_input(struct mbuf **mp, int *offp, int proto)
     if (!m) {
         goto sdtp_input_done;
     }
-    sdtp_header = mtod(m, struct sdtp_common_header *);
-    sdtp_handle_packet(m, sdtp_header, &addr, pcb);
+    sdtp_handle_packet(m, &addr, pcb);
 
 sdtp_input_done:
     // TODO: add sdtp_send_grants(sdtp);

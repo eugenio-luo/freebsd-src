@@ -315,15 +315,17 @@ sdtp_add_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_data_header *h
  * rpc need to be locked
  */
 static int 
-sdtp_data_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_data_header *header, struct sdtp_inpcb *pcb)
+sdtp_data_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_inpcb *pcb)
 {
     mtx_assert(rpc->spinlock_p, MA_OWNED);
 
-    sdtp_data_header_debug(header, NULL);
 
+    struct sdtp_data_header *header = mtod(m, struct sdtp_data_header *);
     struct sdtp *sdtp = pcb->sdtp;
     bool rpc_handoff = false;
     int old_remaining, incoming_delta = 0;
+
+    sdtp_data_header_debug(header, NULL);
 
     if (rpc->state != SDTP_RPC_INCOMING) {
         if (sdtp_is_client(rpc->id)) {
@@ -395,16 +397,17 @@ sdtp_reap_rpc(struct sdtp_inpcb *pcb, int count)
 }
 
 void
-sdtp_handle_packet(struct mbuf *m, struct sdtp_common_header *header, struct in6_addr *source, struct sdtp_inpcb *pcb)
+sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *pcb)
 {
     // TODO: For now without sdtp_lock_cache, I lock the rpc lock
 
+    struct sdtp_common_header *header = mtod(m, struct sdtp_common_header *);
     int error = 0;
     uint64_t id = sdtp_local_id(header->sender_id_be);
     struct sdtp *sdtp = pcb->sdtp;
     struct sdtp_rpc *rpc;
 
-    sdtp_header_debug(header, "is_client: %d\n", sdtp_is_client(id));
+    sdtp_header_debug(header, "is_client: %d", sdtp_is_client(id));
 
     if (!sdtp_is_client(id)) {
         if (header->type == SDTP_DATA) {
@@ -446,9 +449,8 @@ sdtp_handle_packet(struct mbuf *m, struct sdtp_common_header *header, struct in6
         if (!m) {
             break;
         }
-        struct sdtp_data_header *data_header = mtod(m, struct sdtp_data_header *);
+        int incoming_delta = sdtp_data_packet(m, rpc, pcb);
 
-        int incoming_delta = sdtp_data_packet(m, rpc, data_header, pcb);
         atomic_add_64(&sdtp->total_incoming_atomic, incoming_delta);
 
         // TODO: sdtp_rpc_reap
