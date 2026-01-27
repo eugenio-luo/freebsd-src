@@ -286,7 +286,7 @@ sdtp_add_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_data_header *h
     }
 
     if ((offset < floor) || (offset + data_bytes > ceiling)) {
-        m_freem(m);
+        sdtp_free_mbuf(m);
         return;
     }
 
@@ -385,7 +385,7 @@ sdtp_data_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_data_header *
     return incoming_delta;
 
 sdtp_data_packet_error:
-    m_freem(m);
+    sdtp_free_mbuf(m);
     return incoming_delta;
 }
 
@@ -450,7 +450,6 @@ sdtp_handle_packet(struct mbuf *m, struct sdtp_common_header *header, struct in6
 
         int incoming_delta = sdtp_data_packet(m, rpc, data_header, pcb);
         atomic_add_64(&sdtp->total_incoming_atomic, incoming_delta);
-        mtx_unlock_spin(rpc->spinlock_p);
 
         // TODO: sdtp_rpc_reap
         break;
@@ -460,6 +459,7 @@ sdtp_handle_packet(struct mbuf *m, struct sdtp_common_header *header, struct in6
         break;
     }
 
+    sdtp_rpc_unlock(rpc);
     return;
 
 sdtp_handle_packet_error:

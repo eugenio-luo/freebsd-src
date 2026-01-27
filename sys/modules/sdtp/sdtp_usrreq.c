@@ -76,7 +76,7 @@ sdtp_register_interest(struct sdtp_interest *interest, struct sdtp_inpcb *pcb, i
         }
 
         if ((rpc->interest != NULL) && (rpc->interest != interest)) {
-            mtx_unlock_spin(rpc->spinlock_p);
+            sdtp_rpc_unlock(rpc);
             return EINVAL;
         }
     }
@@ -85,7 +85,7 @@ sdtp_register_interest(struct sdtp_interest *interest, struct sdtp_inpcb *pcb, i
     if (pcb->shutdown) {
         mtx_unlock_spin(&pcb->spinlock);
         if (rpc) {
-            mtx_unlock_spin(rpc->spinlock_p);
+            sdtp_rpc_unlock(rpc);
         }
         return ESHUTDOWN;
     }
@@ -96,7 +96,7 @@ sdtp_register_interest(struct sdtp_interest *interest, struct sdtp_inpcb *pcb, i
         }
         rpc->interest = interest;
         interest->reg_rpc = rpc;
-        mtx_unlock_spin(rpc->spinlock_p);
+        sdtp_rpc_unlock(rpc);
     }
 
     atomic_store_int(&interest->locked_atomic, 0);
@@ -134,7 +134,7 @@ sdtp_register_interest_claim_rpc:
     atomic_set_32(&rpc->flags_atomic, RPC_HANDING_OFF);
     mtx_unlock_spin(&pcb->spinlock);
     if (!atomic_load_int(&interest->locked_atomic)) {
-        mtx_lock_spin(rpc->spinlock_p);
+        sdtp_rpc_lock(rpc);
         atomic_store_int(&interest->locked_atomic, 1);
     }
     atomic_clear_32(&rpc->flags_atomic, RPC_HANDING_OFF);
@@ -193,7 +193,7 @@ sdtp_copy_to_user_copy:
             break;
         }
         atomic_set_32(&rpc->flags_atomic, RPC_COPYING_TO_USER);
-        mtx_unlock_spin(rpc->spinlock_p);
+        sdtp_rpc_unlock(rpc);
 
         for (i = 0; i < n && !error; ++i) {
             buf = bufs[i];
@@ -229,10 +229,10 @@ sdtp_copy_to_user_copy:
 
         for (i = 0; i < n; ++i) {
             //TODO: sdtp_handle_acks(rpc, bufs[i]);
-            m_freem(bufs[i]);
+            sdtp_free_mbuf(bufs[i]);
         }
         n = 0;
-        mtx_lock_spin(rpc->spinlock_p);
+        sdtp_rpc_lock(rpc);
         atomic_clear_32(&rpc->flags_atomic, RPC_COPYING_TO_USER);
         if (error) {
             break;
@@ -313,11 +313,11 @@ sdtp_wait_for_message_found_rpc:
         rpc = (struct sdtp_rpc *) atomic_load_ptr(&interest.ready_rpc_atomic);
         if (rpc) {
             if (!atomic_load_int(&interest.locked_atomic)) {
-                mtx_lock_spin(rpc->spinlock_p);
+                sdtp_rpc_lock(rpc);
             }
             atomic_clear_32(&rpc->flags_atomic, RPC_HANDING_OFF);
             if (rpc->state == SDTP_RPC_DEAD) {
-                mtx_unlock_spin(rpc->spinlock_p);
+                sdtp_rpc_unlock(rpc);
                 continue;
             }
 
@@ -338,7 +338,7 @@ sdtp_wait_for_message_found_rpc:
             if (rpc->msgin.copied_out == rpc->msgin.total_length) {
                 goto sdtp_wait_for_message_done;
             }
-            mtx_unlock_spin(rpc->spinlock_p);
+            sdtp_rpc_unlock(rpc);
         }
     }
 
@@ -374,7 +374,7 @@ sdtp_soreceive(struct socket *so,
     // TODO: freeze_type = SLOW_RPC
 
     rpc->msgin.num_bufs = 0;
-    mtx_unlock_spin(rpc->spinlock_p);
+    sdtp_rpc_unlock(rpc);
 
 sdtp_soreceive_done:
     return res;
