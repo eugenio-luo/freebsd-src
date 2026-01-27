@@ -80,6 +80,9 @@ sdtp_input_done:
     // TODO: free only if there is an error, we should give &m as argument instead
     // of m so when reference is taken, m becomes NULL
     if (m) {
+        mtx_assert(&pcb->spinlock, MA_NOTOWNED);
+        mtx_assert(&pcb->sdtp->port_map.write_spinlock, MA_NOTOWNED);
+
         //m_free(m);
     }
     return IPPROTO_DONE;

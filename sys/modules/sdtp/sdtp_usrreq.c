@@ -151,16 +151,21 @@ sdtp_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc)
 
     int error = 0, n = 0;
 
+    KASSERT(rpc->msgin.num_bufs > 0, ("the num of bufs should be positive: %d", rpc->msgin.num_bufs));
+
     while (true) {
         struct sdtp_packet_tailq_entry *buf_entry = TAILQ_FIRST(&rpc->msgin.packets);
         struct sdtp_data_header *header;
         int i, segment_offset;
-        
+
         if (buf_entry == NULL || (rpc->msgin.copied_out >= rpc->msgin.total_length)) {
             goto sdtp_copy_to_user_copy;
         }
 
         struct mbuf *buf = buf_entry->data;
+
+        sdtp_debug("sdtp_copy_to_user called with rpc: %#lx, buf: %#lx, buf data: %#lx\n", (uintptr_t) rpc, (uintptr_t) buf, (uintptr_t) buf->m_data);
+        KASSERT(buf->m_len >= 0, ("buf %d (%#lx) should not have negative size: %d\n", n, (uintptr_t) buf_entry, buf->m_len));
 
         if (buf->m_len < sizeof(struct sdtp_data_header)) {
             goto sdtp_copy_to_user_copy;
@@ -203,6 +208,7 @@ sdtp_copy_to_user_copy:
             if (!buf) {
                 continue;
             }
+
             header = mtod(buf, struct sdtp_data_header *); 
             int rem = ntohl(header->data_segment.segment_length_be);
 

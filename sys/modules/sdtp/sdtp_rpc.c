@@ -66,10 +66,14 @@ sdtp_is_client(uint64_t id)
 static void
 sdtp_handoff_rpc(struct sdtp_rpc *rpc)
 {
+    VALID_RPC_ASSERT(rpc);
+
 	struct sdtp_interest *interest;
     struct sdtp_inpcb *pcb = rpc->sdtpcb;
 
     mtx_assert(&pcb->spinlock, MA_OWNED);
+
+    sdtp_rpc_debug(rpc, "handing off");
 
     if ((atomic_load_32(&rpc->flags_atomic) & RPC_HANDING_OFF)
         || atomic_load_int(&rpc->is_ready_atomic))
@@ -102,6 +106,9 @@ sdtp_handoff_rpc(struct sdtp_rpc *rpc)
 sdtp_handoff_rpc_waiting:
     atomic_set_32(&rpc->flags_atomic, RPC_HANDING_OFF);
     atomic_store_32(&interest->locked_atomic, 0);
+
+    sdtp_rpc_debug(rpc, "waking up thread: %#x", interest->thread);
+
     atomic_store_rel_ptr(&interest->ready_rpc_atomic, (uintptr_t) rpc);
 
     if (interest->reg_rpc) {
@@ -259,7 +266,8 @@ sdtp_message_in_init(struct sdtp_message_in *msgin, int length, int incoming)
 static void
 sdtp_add_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_data_header *header)
 {
-    mtx_assert(rpc->spinlock_p, MA_OWNED);
+    RPC_LOCK_OWNED(rpc);
+    MBUF_LEN_ASSERT(m, struct sdtp_data_header);
 
     struct sdtp_packet_tailq_entry *packet, *new;
     int offset = ntohl(header->data_segment.offset_be);
@@ -311,8 +319,11 @@ sdtp_add_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_data_header *h
 static int 
 sdtp_data_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_inpcb *pcb)
 {
-    mtx_assert(rpc->spinlock_p, MA_OWNED);
+    RPC_LOCK_OWNED(rpc);
 
+    MBUF_LEN_ASSERT(m, struct sdtp_data_header);
+    VALID_PCB_ASSERT(pcb);
+    VALID_RPC_ASSERT(rpc);
 
     struct sdtp_data_header *header = mtod(m, struct sdtp_data_header *);
     struct sdtp *sdtp = pcb->sdtp;
@@ -395,6 +406,9 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
 {
     // TODO: For now without sdtp_lock_cache, I lock the rpc lock
 
+    MBUF_LEN_ASSERT(m, struct sdtp_common_header);
+    VALID_PCB_ASSERT(pcb);
+
     struct sdtp_common_header *header = mtod(m, struct sdtp_common_header *);
     int error = 0;
     uint64_t id = sdtp_local_id(header->sender_id_be);
@@ -456,6 +470,8 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
     }
 
     sdtp_rpc_unlock(rpc);
+
+    RPC_LOCK_NOTOWNED(rpc);
     return;
 
 sdtp_handle_packet_error:
