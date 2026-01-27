@@ -31,6 +31,7 @@ sdtp_find_peer(struct sdtp_peermap *peermap, struct in6_addr *addr, struct inpcb
             return peer;
         }
     }
+    mtx_unlock_spin(&peermap->write_spinlock);
 
     peer = SDTP_ZONE_GET(zones.sdtp_zone_peer, struct sdtp_peer);
     if (!peer) {
@@ -46,7 +47,6 @@ sdtp_find_peer(struct sdtp_peermap *peermap, struct in6_addr *addr, struct inpcb
 	peer->last_update_jiffies = 0;
 	TAILQ_INIT(&peer->grantable_rpcs);
 	TAILQ_INIT(&peer->grantable_links);
-    LIST_INSERT_HEAD(&peermap->buckets[bucket_idx], peer, peermap_links);
 	peer->outstanding_resends = 0;
 	peer->most_recent_resend = 0;
 	peer->least_recent_rpc = NULL;
@@ -56,7 +56,10 @@ sdtp_find_peer(struct sdtp_peermap *peermap, struct in6_addr *addr, struct inpcb
 	peer->num_acks = 0;
 	mtx_init(&peer->ack_spinlock, "peer ack spinlock", NULL, MTX_SPIN);
 
-sdtp_find_peer_done:
+    mtx_lock_spin(&peermap->write_spinlock);
+    LIST_INSERT_HEAD(&peermap->buckets[bucket_idx], peer, peermap_links);
     mtx_unlock_spin(&peermap->write_spinlock);
+
+sdtp_find_peer_done:
     return peer;
 }

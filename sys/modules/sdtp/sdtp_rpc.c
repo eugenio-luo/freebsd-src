@@ -160,16 +160,10 @@ sdtp_new_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, struct sdtp
     *error = 0;
     uint64_t id = sdtp_local_id(header->common.sender_id_be);
     struct sdtp_rpc_bucket *bucket = sdtp_server_rpc_bucket(pcb, id);
-    struct sdtp_rpc *rpc = NULL;
+    struct sdtp_rpc *rpc = sdtp_find_server_rpc(pcb, source, ntohs(header->common.sport_be), id);
 
-    mtx_lock_spin(&bucket->spinlock);
-    LIST_FOREACH(rpc, &bucket->rpcs, hash_links) {
-       if (rpc->id == id
-            && rpc->dport == ntohs(header->common.sport_be)
-            && is_ipv6_same(&rpc->peer->addr, source)) {
-
-            return rpc;
-        }
+    if (rpc) {
+        return rpc;
     }
 
     rpc = SDTP_ZONE_GET(zones.sdtp_zone_rpc, struct sdtp_rpc);
@@ -179,7 +173,6 @@ sdtp_new_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, struct sdtp
     }
 
     rpc->sdtpcb = pcb;
-    rpc->spinlock_p = &bucket->spinlock;
     rpc->state = SDTP_RPC_INCOMING;
     atomic_store_32(&rpc->flags_atomic, 0);
     atomic_store_32(&rpc->grants_in_progress_atomic, 0);
@@ -216,6 +209,8 @@ sdtp_new_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, struct sdtp
     // TODO: HomaLS context initialization
     // rpc->ctx = set_rpc_context();
 
+    mtx_lock_spin(&bucket->spinlock);
+    rpc->spinlock_p = &bucket->spinlock;
     LIST_INSERT_HEAD(&bucket->rpcs, rpc, hash_links);
     TAILQ_INSERT_TAIL(&pcb->active_rpcs, rpc, active_links);
     if (!rpc->ctx) {
@@ -229,7 +224,6 @@ sdtp_new_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, struct sdtp
     return rpc;
 
 sdtp_new_server_rpc_error:
-    mtx_unlock_spin(&bucket->spinlock);
     if (rpc) {
         SDTP_ZONE_FREE(zones.sdtp_zone_rpc, rpc);
     }
