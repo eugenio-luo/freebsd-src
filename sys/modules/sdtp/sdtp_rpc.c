@@ -116,7 +116,7 @@ sdtp_handoff_rpc_waiting:
         remove_response_interest(pcb, interest);
     }
 
-    wakeup(&interest->thread);
+    wakeup(&interest->spinlock);
 }
 
 struct sdtp_rpc *

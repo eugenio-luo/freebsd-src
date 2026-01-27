@@ -225,7 +225,10 @@ sdtp_interest_init(struct sdtp_interest *interest)
 {
     interest->thread = curthread;
     atomic_store_ptr(&interest->ready_rpc_atomic, 0);
+
+    mtx_init(&interest->spinlock, "interest sleep lock", NULL, MTX_SPIN);
     atomic_store_int(&interest->locked_atomic, 0);
+
     interest->reg_rpc = NULL;
     atomic_store_int(&interest->is_response_atomic, false);
     atomic_store_int(&interest->is_request_atomic, false);
