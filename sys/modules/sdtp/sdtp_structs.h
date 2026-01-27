@@ -180,7 +180,12 @@ struct sdtp_zones {
     sdtp_zone_t sdtp_zone_sock;
     sdtp_zone_t sdtp_zone_rpc;
     sdtp_zone_t sdtp_zone_peer;
-    sdtp_zone_t sdtp_zone_packet_tailq_entry;
+
+    struct {
+        sdtp_zone_t sdtp_zone_entry;
+        struct sdtp_packet_tailq entries;
+        struct mtx spinlock;
+    } packet_tailq;
 };
 
 static inline struct sdtp_rpc_bucket *
@@ -204,6 +209,7 @@ int sdtp_init(struct sdtp *sdtp);
 int sdtp_uninit(struct sdtp *sdtp);
 void sdtp_interest_init(struct sdtp_interest *interest);
 
-int sdtp_inpcb_alloc(struct socket *so, struct sdtp *sdtp);
+struct sdtp_packet_tailq_entry *sdtp_alloc_packet_tailq_entry(void);
+void sdtp_free_packet_tailq_entry(struct sdtp_packet_tailq_entry *entry);
 
 #endif 

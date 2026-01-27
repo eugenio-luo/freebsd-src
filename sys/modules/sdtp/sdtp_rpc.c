@@ -295,7 +295,7 @@ sdtp_add_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_data_header *h
         //TODO: homa_freeze()
     }
 
-    new = SDTP_ZONE_GET(zones.sdtp_zone_packet_tailq_entry, struct sdtp_packet_tailq_entry);
+    new = sdtp_alloc_packet_tailq_entry();
     new->data = m;
 
     if (packet) {

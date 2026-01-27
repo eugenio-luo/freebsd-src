@@ -179,7 +179,7 @@ sdtp_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc)
         bufs[n] = buf;
         ++n;
         TAILQ_REMOVE(&rpc->msgin.packets, buf_entry, link);
-        SDTP_ZONE_FREE(zones.sdtp_zone_packet_tailq_entry, buf_entry);
+        sdtp_free_packet_tailq_entry(buf_entry);
 
         --rpc->msgin.num_bufs;
         rpc->msgin.copied_out = segment_offset + ntohl(header->data_segment.segment_length_be);

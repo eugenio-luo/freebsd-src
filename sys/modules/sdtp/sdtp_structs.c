@@ -10,6 +10,7 @@
 #include "sdtp_structs.h"
 #include "sdtp_os.h"
 #include "sdtp.h"
+#include "sdtp_debug.h"
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -28,16 +29,48 @@ struct sdtp_zones zones;
 static int 
 sdtp_zone_init(void)
 {
+    struct sdtp_packet_tailq_entry *entry;
+    int i;
+
     SDTP_ZONE_INIT(zones.sdtp_zone_sock, "sdtp_sock",
 	    sizeof(struct sdtp_inpcb), maxsockets);
     SDTP_ZONE_INIT(zones.sdtp_zone_rpc, "sdtp_rpc",
         sizeof(struct sdtp_rpc), MAX_SDTP_RPC);
     SDTP_ZONE_INIT(zones.sdtp_zone_peer, "sdtp_peer",
         sizeof(struct sdtp_peer), MAX_SDTP_PEER);
-    SDTP_ZONE_INIT(zones.sdtp_zone_packet_tailq_entry, "sdtp_packet_tailq_entry",
+    SDTP_ZONE_INIT(zones.packet_tailq.sdtp_zone_entry, "sdtp_packet_tailq_entry",
         sizeof(struct sdtp_packet_tailq_entry), MAX_SDTP_PACKET_TAILQ_ENTRY);
 
+    TAILQ_INIT(&zones.packet_tailq.entries);
+	mtx_init(&zones.packet_tailq.spinlock, "sdtp packet tailq spinlock", NULL, MTX_SPIN);
+    for (i = 0; i < MAX_SDTP_PACKET_TAILQ_ENTRY; ++i) {
+        entry = SDTP_ZONE_GET(zones.packet_tailq.sdtp_zone_entry, struct sdtp_packet_tailq_entry);
+        TAILQ_INSERT_HEAD(&zones.packet_tailq.entries, entry, link);
+    }
+
     return 0;
+}
+
+struct sdtp_packet_tailq_entry *
+sdtp_alloc_packet_tailq_entry(void)
+{
+    struct sdtp_packet_tailq_entry *entry;
+
+    mtx_lock_spin(&zones.packet_tailq.spinlock);
+    entry = TAILQ_FIRST(&zones.packet_tailq.entries);
+    TAILQ_REMOVE(&zones.packet_tailq.entries, entry, link);
+    mtx_unlock_spin(&zones.packet_tailq.spinlock);
+
+    return entry;
+}
+
+void
+sdtp_free_packet_tailq_entry(struct sdtp_packet_tailq_entry *entry)
+{
+    mtx_lock_spin(&zones.packet_tailq.spinlock);
+    memset(entry, 0, sizeof(struct sdtp_packet_tailq_entry));
+    TAILQ_INSERT_HEAD(&zones.packet_tailq.entries, entry, link);
+    mtx_unlock_spin(&zones.packet_tailq.spinlock);
 }
 
 static int
@@ -203,5 +236,7 @@ int sdtp_uninit(struct sdtp *sdtp)
 {
     SDTP_ZONE_DESTROY(zones.sdtp_zone_sock);
     SDTP_ZONE_DESTROY(zones.sdtp_zone_rpc);
+    SDTP_ZONE_DESTROY(zones.sdtp_zone_peer);
+    SDTP_ZONE_DESTROY(zones.packet_tailq.sdtp_zone_entry);
     return 0;
 }
