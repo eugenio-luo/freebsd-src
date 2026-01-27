@@ -192,4 +192,11 @@ sdtp_data_header_debug(struct sdtp_data_header *header, const char *fmt, ...)
         mtx_assert((RPC)->spinlock_p, MA_NOTOWNED); \
     } while (0)
 
+#define INTEREST_NOT_LINKED(INTEREST) \
+    do { \
+        KASSERT(atomic_load_int(&(INTEREST)->is_response_atomic) == false \
+                && atomic_load_int(&(INTEREST)->is_request_atomic) == false, \
+            ("interest " #INTEREST " should not be on any list")); \
+    } while (0)
+
 #endif

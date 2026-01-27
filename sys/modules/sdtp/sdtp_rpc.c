@@ -107,8 +107,6 @@ sdtp_handoff_rpc_waiting:
     atomic_set_32(&rpc->flags_atomic, RPC_HANDING_OFF);
     atomic_store_32(&interest->locked_atomic, 0);
 
-    sdtp_rpc_debug(rpc, "waking up thread: %#x", interest->thread);
-
     atomic_store_rel_ptr(&interest->ready_rpc_atomic, (uintptr_t) rpc);
 
     if (interest->reg_rpc) {
@@ -122,6 +120,10 @@ sdtp_handoff_rpc_waiting:
     if (atomic_load_int(&interest->is_response_atomic)) {
         remove_response_interest(pcb, interest);
     }
+
+    sdtp_rpc_debug(rpc, "waking up thread: %#x", interest->thread);
+    KASSERT(TD_IS_SLEEPING(interest->thread), ("interest's thread should be sleeping"));
+    INTEREST_NOT_LINKED(interest);
 
     wakeup(&interest->spinlock);
 }

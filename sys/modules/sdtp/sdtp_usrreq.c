@@ -303,6 +303,8 @@ sdtp_wait_for_message(struct sdtp_inpcb *pcb, int flags, uint64_t id, struct uio
             mtx_lock_spin(&interest.spinlock);
             msleep_spin(&interest.spinlock, &interest.spinlock, "sdtp_pool", 0);
             mtx_unlock_spin(&interest.spinlock);
+
+            INTEREST_NOT_LINKED(&interest);
         }
         sdtp_pcb_debug(pcb, "waking up");
 
