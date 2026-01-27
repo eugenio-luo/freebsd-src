@@ -76,8 +76,11 @@ sdtp_input(struct mbuf **mp, int *offp, int proto)
 
 sdtp_input_done:
     // TODO: add sdtp_send_grants(sdtp);
+
+    // TODO: free only if there is an error, we should give &m as argument instead
+    // of m so when reference is taken, m becomes NULL
     if (m) {
-        m_free(m);
+        //m_free(m);
     }
     return IPPROTO_DONE;
 }

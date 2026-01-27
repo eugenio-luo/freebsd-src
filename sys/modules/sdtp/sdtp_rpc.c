@@ -465,7 +465,5 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
     return;
 
 sdtp_handle_packet_error:
-    if (m) {
-        m_freem(m);
-    }
+    return;
 }
