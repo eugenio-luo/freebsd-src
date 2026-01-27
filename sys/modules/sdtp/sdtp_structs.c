@@ -223,6 +223,8 @@ int sdtp_init(struct sdtp *sdtp)
 void
 sdtp_interest_init(struct sdtp_interest *interest)
 {
+    memset(interest, 0, sizeof(struct sdtp_interest));
+
     interest->thread = curthread;
     atomic_store_ptr(&interest->ready_rpc_atomic, 0);
 
