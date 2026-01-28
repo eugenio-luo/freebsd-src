@@ -362,6 +362,34 @@ sdtp_wait_for_message_done:
     return rpc;
 }
 
+static void
+sdtp_fill_rcv_control(struct sdtp_rpc *rpc, struct mbuf *buf)
+{
+    struct cmsghdr *header;
+
+    VALID_RPC_ASSERT(rpc);
+    RPC_LOCK_OWNED(rpc);
+    MBUF_LEN_AT_LEAST(buf, CMSG_SPACE(sizeof(struct sdtp_recvmsg_args)));
+
+    header = mtod(buf, struct cmsghdr *);
+	memset(header, 0, CMSG_SPACE(sizeof(struct sdtp_recvmsg_args)));
+    
+    header->cmsg_len = CMSG_LEN(sizeof(struct sdtp_recvmsg_args));
+    header->cmsg_level = IPPROTO_SDTP;
+    header->cmsg_type = 1; // placeholder
+
+    struct sdtp_recvmsg_args *args = (struct sdtp_recvmsg_args *) CMSG_DATA(header);
+    args->id = rpc->id;
+    args->completion_cookie = rpc->completion_cookie;
+    if (rpc->msgin.total_length >= 0) {
+	    args->num_bpages = rpc->msgin.num_bpages;
+        memcpy(args->bpage_offsets, rpc->msgin.bpage_offsets,
+               sizeof(args->bpage_offsets));
+    }
+
+    sdtp_debug("control is fine\n");
+}
+
 // TODO: read options through controlp, but controlp is NULL? Maybe setsockopt() is better 
 static int
 sdtp_soreceive(struct socket *so,
@@ -374,10 +402,26 @@ sdtp_soreceive(struct socket *so,
     int res = 0;
     struct sdtp_inpcb *inp;
     struct sdtp_rpc *rpc = NULL;
+    struct mbuf *control_buf = NULL;
 
     inp = (struct sdtp_inpcb *) so->so_pcb;
     if (inp == NULL) {
         return EINVAL;
+    }
+
+    if (controlp != NULL) {
+        KASSERT(CMSG_SPACE(sizeof(struct sdtp_recvmsg_args)) <= MLEN,
+                ("control msg header + sdtp_recvmsg_args size (%lu) should be less than MHLEN %d",
+                CMSG_SPACE(sizeof(struct sdtp_recvmsg_args)), MLEN));
+
+        control_buf = m_get2(CMSG_SPACE(sizeof(struct sdtp_recvmsg_args)),
+                             M_NOWAIT, MT_DATA, 0);
+        if (!control_buf) {
+            res = ENOBUFS;
+            goto sdtp_soreceive_done;
+        }
+
+        control_buf->m_len = CMSG_SPACE(sizeof(struct sdtp_recvmsg_args));
     }
 
     // TODO: we don't use sdtp_pool_release_bpages?
@@ -389,10 +433,33 @@ sdtp_soreceive(struct socket *so,
 
     // TODO: freeze_type = SLOW_RPC
 
-    rpc->msgin.num_bufs = 0;
-    sdtp_rpc_unlock(rpc);
+    if (controlp != NULL) {
+        sdtp_fill_rcv_control(rpc, control_buf);
+    }
 
 sdtp_soreceive_done:
+    if (rpc) {
+        if (sdtp_is_client(rpc->id)) {
+            sdtp_peer_ack(rpc);
+            // TODO: sdtp_free_rpc()
+        } else {
+            if (res >= 0) {
+                rpc->state = SDTP_RPC_IN_SERVICE;
+            } else {
+                // TODO: sdtp_free_rpc()
+            }
+        }
+        sdtp_rpc_unlock(rpc);
+
+        rpc->msgin.num_bufs = 0;
+    }
+    if (control_buf) {
+        if (res == 0) {
+            *controlp = control_buf;
+        } else {
+            m_freem(control_buf);
+        }
+    }
     return res;
 }
 

@@ -171,6 +171,13 @@ sdtp_data_header_debug(struct sdtp_data_header *header, const char *fmt, ...)
                 (M)->m_len, sizeof(HEADER_TYPE))); \
     } while (0)
 
+#define MBUF_LEN_AT_LEAST(M, SIZE) \
+    do { \
+        KASSERT((M)->m_len >= (int32_t)SIZE, \
+                ("mbuf " #M " (m_len %d) should be at least size of " #SIZE " (size: %zu)", \
+                (M)->m_len, SIZE)); \
+    } while (0)
+
 #define VALID_PCB_ASSERT(PCB) \
     do { \
         KASSERT(PCB != NULL, ("pcb " #PCB " should be valid")); \

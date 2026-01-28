@@ -28,12 +28,19 @@ enum sdtp_pkt_type {
 	SDTP_ACK      = 0x18,
 };
 
-/*
 struct sdtp_msg_args {
     uint64_t id;
     uint64_t completion_cookie;
 };
-*/
+
+struct sdtp_recvmsg_args {
+    uint64_t id;
+    uint64_t completion_cookie;
+    int      flags;
+    uint32_t num_bpages;
+    uint32_t _pad[2];
+	uint32_t bpage_offsets[SDTP_MAX_BPAGES];
+};
 
 struct sdtp_common_header {
     uint16_t sport_be;
