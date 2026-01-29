@@ -19,6 +19,7 @@
 
 #include "sdtp_pcb.h"
 #include "sdtp_rpc.h"
+#include "sdtp_peer.h"
 #include "sdtp.h"
 
 #define SDTP_DEBUG_LOG_LEVEL LOG_INFO
@@ -104,6 +105,24 @@ sdtp_rpc_debug(struct sdtp_rpc *rpc, const char *fmt, ...)
            rpc->id, rpc->dport,
            rpc_flag_to_string(atomic_load_32(&rpc->flags_atomic)),
            rpc->error);
+
+    va_start(args, fmt);
+    sdtp_opt_fmt_print(&buf[0], len, fmt, args);
+    va_end(args);
+#endif
+}
+
+static inline void
+sdtp_peer_debug(struct sdtp_peer *peer, const char *fmt, ...)
+{
+#ifdef SDTP_DEBUG
+    char buf[BUF_SIZE];
+    char in6_buf[INET6_ADDRSTRLEN];
+    va_list args;
+    int len;
+
+    len = snprintf(buf, sizeof(buf), "PEER %s [ num_acks: %d ]",
+                   ip6_sprintf(in6_buf, &peer->addr), peer->num_acks);
 
     va_start(args, fmt);
     sdtp_opt_fmt_print(&buf[0], len, fmt, args);

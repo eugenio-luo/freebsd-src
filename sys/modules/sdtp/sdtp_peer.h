@@ -62,5 +62,7 @@ struct sdtp_peermap {
 };
 
 struct sdtp_peer *sdtp_find_peer(struct sdtp_peermap *peermap, struct in6_addr *addr, struct inpcb *pcb, int *error);
+void sdtp_peer_lock(struct sdtp_peer *peer);
+void sdtp_peer_unlock(struct sdtp_peer *peer);
 
 #endif

@@ -11,11 +11,42 @@
 #include "sdtp_os.h"
 #include "sdtp_peer.h"
 #include "sdtp_structs.h"
+#include "sdtp_debug.h"
 
 #include <sys/types.h>
 #include <sys/hash.h>
 
+#include <netinet/in.h>
+#include <netinet6/in6_fib.h>
+
 extern struct sdtp_zones zones;
+
+void
+sdtp_peer_lock(struct sdtp_peer *peer)
+{
+    sdtp_peer_debug(peer, "locked by %#lx", (uintptr_t)curthread);
+    mtx_lock_spin(&peer->ack_spinlock);
+}
+
+void
+sdtp_peer_unlock(struct sdtp_peer *peer)
+{
+    mtx_unlock_spin(&peer->ack_spinlock);
+    sdtp_peer_debug(peer, "unlocked by %#lx", (uintptr_t)curthread);
+}
+
+static struct nhop_object *
+sdtp_resolve_nh(struct in6_addr *addr, int *error)
+{
+    struct nhop_object *nh;
+
+    nh = fib6_lookup(RT_DEFAULT_FIB, addr, 0, NHR_NONE, 0);
+
+    if (nh == NULL) {
+        *error = EHOSTUNREACH;
+    }
+    return nh;
+}
 
 struct sdtp_peer *
 sdtp_find_peer(struct sdtp_peermap *peermap, struct in6_addr *addr, struct inpcb *pcb, int *error)
@@ -40,7 +71,12 @@ sdtp_find_peer(struct sdtp_peermap *peermap, struct in6_addr *addr, struct inpcb
     }
 
     peer->addr = *addr;
-    // TODO: for now no nh !!!!
+
+    peer->nh = sdtp_resolve_nh(addr, error);
+    if (*error) {
+        goto sdtp_find_peer_done;
+    }
+
 	peer->unsched_cutoffs[SDTP_MAX_PRIORITIES-1] = 0;
 	peer->unsched_cutoffs[SDTP_MAX_PRIORITIES-2] = INT_MAX;
 	peer->cutoff_version_be = 0;

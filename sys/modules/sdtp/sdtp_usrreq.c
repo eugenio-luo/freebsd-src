@@ -440,7 +440,7 @@ sdtp_soreceive(struct socket *so,
 sdtp_soreceive_done:
     if (rpc) {
         if (sdtp_is_client(rpc->id)) {
-            sdtp_peer_ack(rpc);
+            // sdtp_peer_ack(rpc);
             // TODO: sdtp_free_rpc()
         } else {
             if (res >= 0) {
