@@ -11,10 +11,12 @@
 #include "sdtp_os.h"
 #include "sdtp_peer.h"
 #include "sdtp_structs.h"
+#include "sdtp_output.h"
 #include "sdtp_debug.h"
 
 #include <sys/types.h>
 #include <sys/hash.h>
+#include <sys/endian.h>
 
 #include <netinet/in.h>
 #include <netinet6/in6_fib.h>
@@ -99,4 +101,18 @@ sdtp_find_peer(struct sdtp_peermap *peermap, struct in6_addr *addr, struct inpcb
 
 sdtp_find_peer_done:
     return peer;
+}
+
+int
+sdtp_unsched_priority(struct sdtp *sdtp, struct sdtp_peer *peer, int length)
+{
+    int i;
+	for (i = sdtp->num_priorities-1; ; i--) {
+		if (peer->unsched_cutoffs[i] >= length) {
+			return i;
+        }
+	}
+
+    KASSERT(0, ("unreachable"));
+    __unreachable();
 }

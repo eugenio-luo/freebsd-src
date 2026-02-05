@@ -130,4 +130,12 @@ struct sdtp_ack_header {
 } __attribute__((packed));
 CTASSERT(sizeof(struct sdtp_cutoffs_header) <= SDTP_MAX_HEADER);
 
+#define SDTP_SET_DOFF(HEADERP) \
+    do { \
+        (HEADERP)->common.d_off = (sizeof(struct sdtp_data_header) - sizeof(struct sdtp_data_segment)) << 2; \
+    } while (0)
+
+#define IP_SDTP_HEADER_SIZE(RPC, TYPE) \
+    ((RPC)->sdtpcb->ip_header_length + sizeof(TYPE))
+
 #endif
