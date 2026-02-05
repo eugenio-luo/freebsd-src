@@ -27,30 +27,6 @@
 #include "sdtp_peer.h"
 #include "sdtp_rpc.h"
 
-/*
-struct sockaddr_in_union {
-    struct sockaddr_in  in4;
-    struct sockaddr_in6 in6;
-};
-
-inline struct in6_addr
-canonical_ipv6_addr(const struct sockaddr_in_union *addr)
-{
-    struct in6_addr res;
-
-    if (addr->in6.sin6_family == AF_INET) {
-        bzero(&res, sizeof(res));
-        res.s6_addr[10] = 0xff;
-        res.s6_addr[11] = 0xff;
-        memcpy(&res.s6_addr[12], &addr->in4.sin_addr, 4);
-    } else {
-        res = addr->in6.sin6_addr;
-    }
-
-    return res;
-}
-*/
-
 struct sdtp_core {
     uint64_t last_active;
     uint64_t last_gro;
@@ -162,7 +138,7 @@ struct sdtp {
     char *metrics;
     size_t metrics_capacity;
     size_t metrics_length;
-    
+
     int metrics_active_opens;
 	int flags;
     enum sdtp_freeze_type freeze_type;
