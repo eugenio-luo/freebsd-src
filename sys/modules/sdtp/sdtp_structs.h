@@ -186,6 +186,8 @@ struct sdtp_zones {
         struct sdtp_packet_tailq entries;
         struct mtx spinlock;
     } packet_tailq;
+
+    sdtp_zone_t sdtp_zone_packet_slist_entry;
 };
 
 static inline struct sdtp_rpc_bucket *

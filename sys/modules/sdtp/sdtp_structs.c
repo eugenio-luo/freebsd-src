@@ -40,6 +40,8 @@ sdtp_zone_init(void)
         sizeof(struct sdtp_peer), MAX_SDTP_PEER);
     SDTP_ZONE_INIT(zones.packet_tailq.sdtp_zone_entry, "sdtp_packet_tailq_entry",
         sizeof(struct sdtp_packet_tailq_entry), MAX_SDTP_PACKET_TAILQ_ENTRY);
+    SDTP_ZONE_INIT(zones.sdtp_zone_packet_slist_entry, "sdtp_packet_slist_entry",
+        sizeof(struct sdtp_packet_slist_entry), MAX_SDTP_PACKET_SLIST_ENTRY);
 
     TAILQ_INIT(&zones.packet_tailq.entries);
 	mtx_init(&zones.packet_tailq.spinlock, "sdtp packet tailq spinlock", NULL, MTX_SPIN);
