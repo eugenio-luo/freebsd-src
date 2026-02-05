@@ -485,3 +485,43 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
 sdtp_handle_packet_error:
     return;
 }
+
+void
+sdtp_rpc_free(struct sdtp_rpc *rpc)
+{
+    int delta;
+
+    mtx_assert(rpc->spinlock_p, MA_OWNED);
+
+    if (rpc == NULL || rpc->state == SDTP_RPC_DEAD) {
+        return;
+    }
+
+    rpc->state = SDTP_RPC_DEAD;
+    // TODO: sdtp_remove_from_grantable
+
+    if (SDTP_LIST_LINKED(rpc, hash_links)) {
+        SDTP_LIST_REMOVE_LOCKED(rpc, hash_links);
+    }
+    if (SDTP_QUEUE_LINKED(rpc, active_links)) {
+        SDTP_QUEUE_REMOVE_LOCKED(&(rpc->sdtpcb->active_rpcs), rpc, active_links);
+    }
+    SDTP_QUEUE_INSERT_TAIL(&(rpc->sdtpcb->dead_rpcs), rpc, dead_links);
+	rpc->sdtpcb->dead_bufs += rpc->msgin.num_bufs + rpc->msgout.num_bufs;
+    if (SDTP_LIST_LOCK_IF_LINKED(rpc, ready_links)) {
+        SDTP_LIST_REMOVE(rpc, ready_links);
+    }
+    if (rpc->interest != NULL) {
+        rpc->interest->reg_rpc = NULL;
+        wakeup(&rpc->interest->spinlock);
+        rpc->interest = NULL;
+    }
+
+    delta = (rpc->msgin.total_length < 0) ? 0
+	    : (rpc->msgin.incoming - (rpc->msgin.total_length
+	    - rpc->msgin.bytes_remaining));
+    if (delta != 0) {
+        atomic_add_64(&rpc->sdtpcb->sdtp->total_incoming_atomic, delta);
+    }
+    // TODO: sdtp_remove_from_throttled
+}
