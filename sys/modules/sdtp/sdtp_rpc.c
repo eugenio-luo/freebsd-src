@@ -42,6 +42,9 @@ sdtp_rpc_unlock(struct sdtp_rpc *rpc)
 
 void sdtp_free_mbuf(struct mbuf *buf)
 {
+    KASSERT(buf != NULL, ("mbuf should be valid"));
+    KASSERT(buf->m_len > 0, ("mbuf size should be at least 0"));
+
     sdtp_debug("buf %#lx free'd", (uintptr_t) buf);
     m_freem(buf);
 }
