@@ -28,7 +28,7 @@ enum sdtp_pkt_type {
 	SDTP_ACK      = 0x18,
 };
 
-struct sdtp_msg_args {
+struct sdtp_sendmsg_args {
     uint64_t id;
     uint64_t completion_cookie;
 };
