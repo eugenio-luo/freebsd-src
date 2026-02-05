@@ -85,7 +85,18 @@ ipv4_to_ipv6(struct in_addr *from, struct in6_addr *to)
     memset(to, 0, sizeof(*to));
     to->s6_addr[10] = 0xFF; 
     to->s6_addr[11] = 0xFF; 
-    memcpy(&to->s6_addr[12], &from->s_addr, 4);
+    memcpy(&to->s6_addr[12], &from->s_addr, sizeof(from->s_addr));
+}
+
+static inline void
+ipv6_to_ipv4(struct in6_addr *from, struct in_addr *to)
+{
+    memset(to, 0, sizeof(*to));
+
+    if (!IN6_IS_ADDR_V4MAPPED(from))
+        return;
+
+    memcpy(&to->s_addr, &from->s6_addr[12], sizeof(to->s_addr));
 }
 
 static inline bool
