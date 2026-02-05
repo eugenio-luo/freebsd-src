@@ -206,6 +206,13 @@ sdtp_data_header_debug(struct sdtp_data_header *header, const char *fmt, ...)
 #define VALID_RPC_ASSERT(RPC) \
     do { \
         KASSERT(RPC != NULL, ("rpc " #RPC " should be valid")); \
+        VALID_PCB_ASSERT((RPC)->sdtpcb); \
+    } while (0)
+
+#define VALID_PEER_ASSERT(PEER) \
+    do { \
+        KASSERT(PEER != NULL, ("peer " #PEER " should be valid")); \
+        KASSERT((PEER)->nh != NULL, ("nhop_object of peer " #PEER " should be valid")); \
     } while (0)
 
 #define RPC_LOCK_OWNED(RPC) \
