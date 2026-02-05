@@ -41,15 +41,15 @@ struct sdtp_packet_tailq_entry {
 
 struct sdtp_message_out {
     int length;
-    int num_buffers;
+    int num_bufs;
 
     struct sdtp_packet_slist packets;
-    struct sdtp_packet_slist_entry **nextxmit;
+    struct sdtp_packet_slist_entry **next_xmit;
     int next_xmit_offset;
 
     unsigned int active_xmits_atomic;
 
-    int gso_pkt_data;
+    int pkt_data;
     int unscheduled;
     int granted;
 
@@ -59,7 +59,7 @@ struct sdtp_message_out {
 
 struct sdtp_message_in {
     int total_length;
-    
+
     struct sdtp_packet_tailq packets;
 
     int num_bufs;
