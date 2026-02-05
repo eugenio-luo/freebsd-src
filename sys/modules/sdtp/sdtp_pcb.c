@@ -10,6 +10,7 @@
 #include "sdtp_os.h"
 #include "sdtp_pcb.h"
 #include "sdtp_structs.h"
+#include "sdtp_queue.h"
 
 #include <sys/domain.h>
 #include <sys/protosw.h>
@@ -102,29 +103,27 @@ sdtp_inpcb_alloc(struct socket *so, struct sdtp *sdtp)
 
     for (i = 0; i < SDTP_CLIENT_RPC_BUCKETS; i++) {
 		struct sdtp_rpc_bucket *bucket = &inp->client_rpc_buckets[i];
-	    mtx_init(&bucket->spinlock, "SDTP client rpc bucket spinlock", NULL, MTX_SPIN);
-        LIST_INIT(&bucket->rpcs);
+        SDTP_LIST_INIT(&bucket->rpcs);
 	}
     for (i = 0; i < SDTP_SERVER_RPC_BUCKETS; i++) {
         struct sdtp_rpc_bucket *bucket = &inp->server_rpc_buckets[i];
-	    mtx_init(&bucket->spinlock, "SDTP server rpc bucket spinlock", NULL, MTX_SPIN);
-        LIST_INIT(&bucket->rpcs);
+        SDTP_LIST_INIT(&bucket->rpcs);
         LIST_INIT(&inp->ctx_buckets[i]);
     }
 
-    TAILQ_INIT(&inp->active_rpcs);
-    TAILQ_INIT(&inp->dead_rpcs);
+    SDTP_QUEUE_INIT(&inp->active_rpcs);
+    SDTP_QUEUE_INIT(&inp->dead_rpcs);
     inp->dead_bufs = 0;
-    TAILQ_INIT(&inp->ready_requests);
-    TAILQ_INIT(&inp->ready_responses);
-    TAILQ_INIT(&inp->request_interests);
-    TAILQ_INIT(&inp->response_interests);
+    SDTP_LIST_INIT(&inp->ready_requests);
+    SDTP_LIST_INIT(&inp->ready_responses);
+    SDTP_QUEUE_INIT(&inp->request_interests);
+    SDTP_QUEUE_INIT(&inp->response_interests);
 
 	inp->reuse_ctx = NULL;
 	memset(&inp->buffer_pool, 0, sizeof(inp->buffer_pool));
-    
+
     mtx_lock_spin(&pcbmap->write_spinlock);
-    
+ 
     while (1) {
         if (sdtp->next_client_port < SDTP_MIN_DEFAULT_PORT) {
 			sdtp->next_client_port = SDTP_MIN_DEFAULT_PORT;
@@ -134,7 +133,7 @@ sdtp_inpcb_alloc(struct socket *so, struct sdtp *sdtp)
 		}
 		sdtp->next_client_port++;
     }
-    
+
     inp->port = sdtp->next_client_port;
 	sdtp->next_client_port++;
 	inp->pcbmap_links.sock = inp;

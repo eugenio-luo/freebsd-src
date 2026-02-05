@@ -15,6 +15,7 @@
 #include "sdtp.h"
 #include "sdtp_common.h"
 #include "sdtp_pcb.h"
+#include "sdtp_queue.h"
 
 struct sdtp_peer;
 
@@ -119,13 +120,13 @@ struct sdtp_rpc {
     struct sdtp_message_in msgin;
     struct sdtp_message_out msgout;
 
-    LIST_ENTRY(sdtp_rpc) hash_links;
+    SDTP_LIST_ENTRY(struct sdtp_rpc_mlist, sdtp_rpc) hash_links;
 
     int is_ready_atomic;
 
-    TAILQ_ENTRY(sdtp_rpc) ready_links;
-    TAILQ_ENTRY(sdtp_rpc) active_links;
-    TAILQ_ENTRY(sdtp_rpc) dead_links;
+    SDTP_LIST_ENTRY(struct sdtp_rpc_mlist, sdtp_rpc) ready_links;
+    SDTP_QUEUE_ENTRY(struct sdtp_rpc_mqueue, sdtp_rpc) active_links;
+    SDTP_QUEUE_ENTRY(struct sdtp_rpc_mqueue, sdtp_rpc) dead_links;
 
     struct sdtp_interest *interest;
 
@@ -153,7 +154,7 @@ insert_ready_rpc(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc)
     MPASS(atomic_load_int(&rpc->is_ready_atomic) == false);
 
     atomic_store_int(&rpc->is_ready_atomic, true);
-    TAILQ_INSERT_TAIL(&pcb->ready_responses, rpc, ready_links);
+    SDTP_LIST_INSERT_HEAD(&pcb->ready_responses, rpc, ready_links);
 }
 
 static inline void
@@ -162,7 +163,7 @@ remove_ready_rpc(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc)
     mtx_assert(&pcb->spinlock, MA_OWNED);
     MPASS(atomic_load_int(&rpc->is_ready_atomic) == true);
 
-    TAILQ_REMOVE(&pcb->ready_responses, rpc, ready_links);
+    SDTP_LIST_REMOVE(rpc, ready_links);
     atomic_store_int(&rpc->is_ready_atomic, false);
 }
 

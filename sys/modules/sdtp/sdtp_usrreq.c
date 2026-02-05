@@ -102,16 +102,16 @@ sdtp_register_interest(struct sdtp_interest *interest, struct sdtp_inpcb *pcb, i
 
     atomic_store_int(&interest->locked_atomic, 0);
     if (flags & SDTP_RECVMSG_RESPONSE) {
-        if (!TAILQ_EMPTY(&pcb->ready_responses)) {
-            rpc = TAILQ_FIRST(&pcb->ready_responses);
+        if (!SDTP_LIST_EMPTY(&pcb->ready_responses)) {
+            rpc = SDTP_LIST_FIRST(&pcb->ready_responses, sdtp_rpc);
             goto sdtp_register_interest_claim_rpc;
         }
 
         insert_response_interest(pcb, interest);
     }
     if (flags & SDTP_RECVMSG_REQUEST) {
-        if (!TAILQ_EMPTY(&pcb->ready_requests)) {
-            rpc = TAILQ_FIRST(&pcb->ready_requests);
+        if (!SDTP_LIST_EMPTY(&pcb->ready_requests)) {
+            rpc = SDTP_LIST_FIRST(&pcb->ready_requests, sdtp_rpc);
 
             if (atomic_load_int(&interest->is_response_atomic)) {
                 remove_response_interest(pcb, interest);
@@ -128,8 +128,8 @@ sdtp_register_interest(struct sdtp_interest *interest, struct sdtp_inpcb *pcb, i
 sdtp_register_interest_claim_rpc:
 
     remove_ready_rpc(pcb, rpc);
-    if (!TAILQ_EMPTY(&pcb->ready_requests) || !TAILQ_EMPTY(&pcb->ready_responses)) {
-        sorwakeup(pcb->socket);
+    if (!SDTP_LIST_EMPTY(&pcb->ready_requests) || !SDTP_LIST_EMPTY(&pcb->ready_responses)) {
+        sdtp_sorwakeup(pcb);
     }
 
     atomic_set_32(&rpc->flags_atomic, RPC_HANDING_OFF);

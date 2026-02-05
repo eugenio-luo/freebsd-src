@@ -19,6 +19,7 @@
 
 #include "sdtp_common.h"
 #include "sdtp_pool.h"
+#include "sdtp_queue.h"
 
 struct sdtp;
 struct sdtp_inpcb; 
@@ -36,13 +37,12 @@ struct sdtp_interest {
 
     int is_response_atomic;
     int is_request_atomic;
-    TAILQ_ENTRY(sdtp_interest) request_links;
-    TAILQ_ENTRY(sdtp_interest) response_links;
+    SDTP_QUEUE_ENTRY(struct sdtp_interest_mqueue, sdtp_interest) request_links;
+    SDTP_QUEUE_ENTRY(struct sdtp_interest_mqueue, sdtp_interest) response_links;
 };
 
 struct sdtp_rpc_bucket {
-	struct mtx spinlock;
-    struct sdtp_rpc_list rpcs;
+    struct sdtp_rpc_mlist rpcs;
 };
 
 struct sdtp_pcbmap_link {
@@ -61,7 +61,7 @@ struct sdtp_inpcb {
 
 	struct mtx spinlock;
     char *last_locker;
-    
+
     uint32_t protect_count_atomic;
     struct sdtp *sdtp;
     bool shutdown;
@@ -70,16 +70,16 @@ struct sdtp_inpcb {
 
     struct sdtp_pcbmap_link pcbmap_links;
 
-    struct sdtp_rpc_tailq active_rpcs;
-    struct sdtp_rpc_tailq dead_rpcs;
-    
+    struct sdtp_rpc_mqueue active_rpcs;
+    struct sdtp_rpc_mqueue dead_rpcs;
+
     int dead_bufs;
 
-    struct sdtp_rpc_tailq ready_requests;
-    struct sdtp_rpc_tailq ready_responses;
+    struct sdtp_rpc_mlist ready_requests;
+    struct sdtp_rpc_mlist ready_responses;
 
-    struct sdtp_interest_tailq request_interests;
-    struct sdtp_interest_tailq response_interests;
+    struct sdtp_interest_mqueue request_interests;
+    struct sdtp_interest_mqueue response_interests;
 
     struct sdtp_rpc_bucket client_rpc_buckets[SDTP_CLIENT_RPC_BUCKETS];
     struct sdtp_rpc_bucket server_rpc_buckets[SDTP_SERVER_RPC_BUCKETS];
@@ -97,7 +97,7 @@ insert_response_interest(struct sdtp_inpcb *pcb, struct sdtp_interest *interest)
     MPASS(atomic_load_int(&interest->is_response_atomic) == false);
 
     atomic_store_int(&interest->is_response_atomic, true);
-    TAILQ_INSERT_TAIL(&pcb->response_interests, interest, response_links);
+    SDTP_QUEUE_INSERT_TAIL(&pcb->response_interests, interest, response_links);
 }
 
 static inline void
@@ -106,7 +106,7 @@ remove_response_interest(struct sdtp_inpcb *pcb, struct sdtp_interest *interest)
     mtx_assert(&pcb->spinlock, MA_OWNED);
     MPASS(atomic_load_int(&interest->is_response_atomic) == true);
 
-    TAILQ_REMOVE(&pcb->response_interests, interest, response_links);
+    SDTP_QUEUE_REMOVE(&pcb->response_interests, interest, response_links);
     atomic_store_int(&interest->is_response_atomic, false);
 }
 
@@ -117,7 +117,7 @@ insert_request_interest(struct sdtp_inpcb *pcb, struct sdtp_interest *interest)
     MPASS(atomic_load_int(&interest->is_request_atomic) == false);
 
     atomic_store_int(&interest->is_request_atomic, true);
-    TAILQ_INSERT_TAIL(&pcb->request_interests, interest, request_links);
+    SDTP_QUEUE_INSERT_TAIL(&pcb->request_interests, interest, request_links);
 }
 
 static inline void
@@ -126,7 +126,7 @@ remove_request_interest(struct sdtp_inpcb *pcb, struct sdtp_interest *interest)
     mtx_assert(&pcb->spinlock, MA_OWNED);
     MPASS(atomic_load_int(&interest->is_request_atomic) == true);
 
-    TAILQ_REMOVE(&pcb->request_interests, interest, request_links);
+    SDTP_QUEUE_REMOVE(&pcb->request_interests, interest, request_links);
     atomic_store_int(&interest->is_request_atomic, false);
 }
 

@@ -87,13 +87,13 @@ sdtp_handoff_rpc(struct sdtp_rpc *rpc)
     }
 
     if (sdtp_is_client(rpc->id)) {
-        interest = TAILQ_FIRST(&pcb->response_interests);
+        interest = SDTP_QUEUE_FIRST(&pcb->response_interests, sdtp_interest);
         if (interest) {
             goto sdtp_handoff_rpc_waiting;
         }
         insert_ready_rpc(pcb, rpc);
     } else {
-        interest = TAILQ_FIRST(&pcb->request_interests);
+        interest = SDTP_QUEUE_FIRST(&pcb->request_interests, sdtp_interest);
         if (interest) {
             goto sdtp_handoff_rpc_waiting;
         }
@@ -134,24 +134,24 @@ sdtp_find_client_rpc(struct sdtp_inpcb *pcb, uint64_t id)
     struct sdtp_rpc *rpc = NULL;
     struct sdtp_rpc_bucket *bucket = sdtp_client_rpc_bucket(pcb, id);
 
-    mtx_lock_spin(&bucket->spinlock);
-    LIST_FOREACH(rpc, &bucket->rpcs, hash_links) {
+    SDTP_LIST_LOCK(&bucket->rpcs);
+    SDTP_LIST_FOREACH_LOCKED(rpc, &bucket->rpcs, hash_links) {
        if (rpc->id == id) {
             return rpc;
         }
     }
-    mtx_unlock_spin(&bucket->spinlock);
+    SDTP_LIST_UNLOCK(&bucket->rpcs);
     return NULL;
 }
 
-static struct sdtp_rpc *
+struct sdtp_rpc *
 sdtp_find_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, uint16_t port, uint64_t id)
 {
     struct sdtp_rpc *rpc = NULL;
     struct sdtp_rpc_bucket *bucket = sdtp_server_rpc_bucket(pcb, id);
 
-    mtx_lock_spin(&bucket->spinlock);
-    LIST_FOREACH(rpc, &bucket->rpcs, hash_links) {
+    SDTP_LIST_LOCK(&bucket->rpcs);
+    SDTP_LIST_FOREACH_LOCKED(rpc, &bucket->rpcs, hash_links) {
        if (rpc->id == id
             && rpc->dport == port
             && is_ipv6_same(&rpc->peer->addr, source)) {
@@ -159,7 +159,7 @@ sdtp_find_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, uint16_t p
             return rpc;
         }
     }
-    mtx_unlock_spin(&bucket->spinlock);
+    SDTP_LIST_UNLOCK(&bucket->rpcs);
     return NULL;
 }
 
@@ -193,7 +193,11 @@ sdtp_new_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, struct sdtp
     rpc->id = id;
     rpc->completion_cookie = 0;
 	rpc->error = 0;
+    SDTP_LIST_ENTRY_INIT(&rpc->hash_links);
     atomic_store_int(&rpc->is_ready_atomic, false);
+    SDTP_LIST_ENTRY_INIT(&rpc->ready_links);
+    SDTP_QUEUE_ENTRY_INIT(&rpc->active_links);
+    SDTP_QUEUE_ENTRY_INIT(&rpc->dead_links);
 	rpc->msgin.total_length = -1;
 	rpc->msgin.num_bufs = 0;
 	rpc->msgin.num_bpages = 0;
@@ -218,10 +222,12 @@ sdtp_new_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, struct sdtp
     // TODO: HomaLS context initialization
     // rpc->ctx = set_rpc_context();
 
-    mtx_lock_spin(&bucket->spinlock);
-    rpc->spinlock_p = &bucket->spinlock;
-    LIST_INSERT_HEAD(&bucket->rpcs, rpc, hash_links);
-    TAILQ_INSERT_TAIL(&pcb->active_rpcs, rpc, active_links);
+    SDTP_QUEUE_LOCK(&pcb->active_rpcs);
+    SDTP_LIST_LOCK(&bucket->rpcs);
+    rpc->spinlock_p = &bucket->rpcs.spinlock;
+    SDTP_LIST_INSERT_HEAD_LOCKED(&bucket->rpcs, rpc, hash_links);
+    SDTP_QUEUE_INSERT_TAIL_LOCKED(&pcb->active_rpcs, rpc, active_links);
+    SDTP_QUEUE_UNLOCK(&pcb->active_rpcs);
     if (!rpc->ctx) {
         if (ntohl(header->data_segment.offset_be) == 0) {
             atomic_set_32(&rpc->flags_atomic, RPC_PKTS_READY);
@@ -449,7 +455,7 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
             rpc->silent_ticks = 0; 
         }
         rpc->peer->outstanding_resends = 0; 
-        
+
         // TODO: implement frozen
     }
 
