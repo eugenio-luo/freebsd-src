@@ -27,6 +27,7 @@
 #include "sdtp_structs.h"
 #include "sdtp_pool.h"
 #include "sdtp_debug.h"
+#include "sdtp_output.h"
 
 extern struct sdtp *sdtp;
 extern struct sdtp_zones zones;
@@ -557,64 +558,156 @@ sdtp_bind(struct socket *so, struct sockaddr *addr, struct thread *p)
     return sdtp_inpcb_bind(&inp->sdtp->port_map, port, inp);
 }
 
-static void
-sdtp_close(struct socket *so)
+static struct sdtp_sendmsg_args *
+sdtp_read_control_buf(struct mbuf *buf)
 {
-    so->so_pcb = NULL;
+    struct cmsghdr *cmsg;
+
+    if (buf == NULL || buf->m_len < sizeof(struct cmsghdr)) {
+        return NULL;
+    }
+
+    cmsg = mtod(buf, struct cmsghdr *);
+
+    if (cmsg->cmsg_level != IPPROTO_SDTP) {
+        return NULL;
+    }
+    if (cmsg->cmsg_len > buf->m_len || cmsg->cmsg_len < CMSG_LEN(sizeof(struct sdtp_sendmsg_args))) {
+        return NULL;
+    }
+
+    return (struct sdtp_sendmsg_args *) CMSG_DATA(cmsg);
 }
 
+static int
+sdtp_send_response(struct sdtp_inpcb *pcb,
+                   struct uio *uio,
+                   struct sockaddr *sockaddr,
+                   struct sdtp_sendmsg_args *args)
+{
+    int error = 0;
+    struct sdtp_rpc *rpc = NULL;
+    struct in6_addr addr;
+    uint16_t port;
 
-//static int
-//sdtp_sendm(struct socket *so, int flags, struct mbuf *m, struct sockaddr *addr,
-//    struct mbuf *control, struct thread *p)
-//{
-//    //struct sdtp_inpcb *pcb = (struct sdtp_inpcb *) so->so_pcb;
-//    struct sdtp_msg_args args;
-//    //uint64_t start = get_cyclecount();
-//    //uint64_t finish;
-//    int error = 0;
-//    struct sdtp_rpc *rpc = NULL;
-//
-//    /* todo: does control contain sdtp_msg_args? */
-//    if (control == NULL || control->m_len < sizeof(args)) {
-//        error = EINVAL;
-//        goto sendm_error;
-//    }
-//    m_copydata(control, 0, sizeof(args), (char *)&args);
-//
-//    if (addr->sa_family != so->so_proto->pr_domain->dom_family) {
-//        error = EAFNOSUPPORT;
-//        goto sendm_error;
-//    }
-//
-//    if ((addr->sa_len < sizeof(struct sockaddr_in)) || ((addr->sa_len < sizeof(struct sockaddr_in6)) && (addr->sa_family == AF_INET6))) {
-//        error = EINVAL;
-//        goto sendm_error;
-//    }
-//
-//    if (args.id == 0) {
-//
-//        /* request message */
-//        uprintf("hello");
-//
-//    } else {
-//
-//        uprintf("bye");
-//    }
-//
-//sendm_error:
-//    if (rpc != NULL) {
-//        // todo: free rpc
-//    }
-//    if (control != NULL) {
-//        m_freem(control);
-//    }
-//    if (m != NULL) {
-//        m_freem(m);
-//    }
-//
-//    return error;
-//}
+    if (args->completion_cookie != 0) {
+        error = EINVAL;
+        goto sdtp_send_response_error;
+    }
+
+    switch (sockaddr->sa_family) {
+    case AF_INET: {
+        struct sockaddr_in *sin = (struct sockaddr_in *)sockaddr;
+        ipv4_to_ipv6(&sin->sin_addr, &addr);
+        port = ntohs(sin->sin_port);
+        break;
+    }
+    case AF_INET6: {
+        struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)sockaddr;
+        addr = sin6->sin6_addr;
+        port = ntohs(sin6->sin6_port); 
+        break;
+    }
+    default: {
+		error = EAFNOSUPPORT;
+        goto sdtp_send_response_error;
+    }
+    }
+
+    rpc = sdtp_find_server_rpc(pcb, &addr, port, args->id);
+    if (!rpc) {
+        error = EINVAL;
+        goto sdtp_send_response_error;
+    }
+    if (rpc->error) {
+        error = rpc->error;
+        goto sdtp_send_response_error;
+    }
+    if (rpc->state != SDTP_RPC_IN_SERVICE) {
+        sdtp_rpc_unlock(rpc);
+        rpc = NULL;
+        error = EINVAL;
+        goto sdtp_send_response_error;
+    }
+
+    sdtp_rpc_debug(rpc, "sending response");
+
+    rpc->state = SDTP_RPC_OUTGOING;
+    // TODO: implement homals part
+    error = sdtp_message_out(rpc, uio, true);
+    if (error) {
+        goto sdtp_send_response_error;
+    }
+
+    sdtp_rpc_unlock(rpc);
+    return 0;
+
+sdtp_send_response_error:
+    if (rpc != NULL) {
+        sdtp_rpc_unlock(rpc);
+        sdtp_rpc_free(rpc);
+    }
+    return error;
+}
+
+static int
+sdtp_sosend(struct socket *so, struct sockaddr *addr, struct uio *uio, struct mbuf *top,
+    struct mbuf *control, int flags, struct thread *p)
+{
+    KASSERT(uio != NULL, ("uio must be valid"));
+    KASSERT(top == NULL, ("top must be null"));
+
+    int error = 0;
+    struct sdtp_inpcb *pcb;
+    struct sdtp_sendmsg_args *args;
+
+    sdtp_debug("sosend\n");
+
+    pcb = (struct sdtp_inpcb *) so->so_pcb;
+    if (pcb == NULL) {
+        sdtp_debug("invalid pcb\n");
+        error = EINVAL;
+        goto sdtp_sosend_error;
+    }
+
+    args = sdtp_read_control_buf(control);
+    if (args == NULL) {
+        sdtp_debug("invalid control\n");
+        error = EINVAL;
+        goto sdtp_sosend_error;  
+    }
+
+    if (addr->sa_family != so->so_proto->pr_domain->dom_family) {
+        sdtp_debug("not supported addr family, addr->sa_family: %d, so->dom_family: %d\n",
+                   addr->sa_family, so->so_proto->pr_domain->dom_family);
+        error = EAFNOSUPPORT;
+        goto sdtp_sosend_error;
+    }
+
+    if ((addr->sa_len < sizeof(struct sockaddr_in))
+        || ((addr->sa_len < sizeof(struct sockaddr_in6)) && (addr->sa_family == AF_INET6))) {
+        sdtp_debug("invalid addr\n");
+        error = EINVAL;
+        goto sdtp_sosend_error;
+    }
+
+    if (args->id == 0) {
+        //error = sdtp_send_request();
+    } else {
+        error = sdtp_send_response(pcb, uio, addr, args);
+    }
+
+    if (error != 0) {
+        goto sdtp_sosend_error;
+    }
+
+sdtp_sosend_error:
+    if (control != NULL) {
+        sdtp_free_mbuf(control);
+    }
+
+    return error;
+}
 
 struct protosw sdtp_protosw = {
 	.pr_type = SOCK_DGRAM,
@@ -624,8 +717,8 @@ struct protosw sdtp_protosw = {
 	.pr_soreceive =	sdtp_soreceive,
 	.pr_bind =	    sdtp_bind,
 	.pr_close =	sdtp_close,
+	.pr_sosend =	sdtp_sosend,
 	//.pr_ctloutput =	sdtp_ctloutput,
-	//.pr_send =	sdtp_sendm,
 	/*
 	.pr_connect =	sdtp_connect,
 	.pr_abort =	sdp_abort,
@@ -652,8 +745,8 @@ struct protosw sdtp6_protosw = {
 	.pr_soreceive =	sdtp_soreceive,
 	.pr_bind =	    sdtp_bind,
 	.pr_close =	sdtp_close,
+	.pr_sosend =	sdtp_sosend,
 	//.pr_ctloutput =	sdtp_ctloutput,
-	//.pr_send =	sdtp_sendm,
 	/*
 	.pr_connect =	sdtp_connect,
 	.pr_abort =	sdp_abort,
