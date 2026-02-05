@@ -362,7 +362,7 @@ sdtp_wait_for_message_done:
     return rpc;
 }
 
-static void
+static struct mbuf *
 sdtp_fill_rcv_control(struct sdtp_rpc *rpc, struct mbuf *buf)
 {
     struct cmsghdr *header;
@@ -387,7 +387,25 @@ sdtp_fill_rcv_control(struct sdtp_rpc *rpc, struct mbuf *buf)
                sizeof(args->bpage_offsets));
     }
 
-    sdtp_debug("control is fine\n");
+    return buf;
+}
+
+static void
+sdtp_fill_sockaddr(struct sdtp_rpc *rpc, struct sockaddr_in *sin)
+{
+    sin->sin_family = AF_INET;
+    sin->sin_len = sizeof(struct sockaddr_in);
+    sin->sin_port = htons(rpc->dport);
+    ipv6_to_ipv4(&rpc->peer->addr, &sin->sin_addr);
+}
+
+static void
+sdtp_fill_sockaddr6(struct sdtp_rpc *rpc, struct sockaddr_in6 *sin)
+{
+    sin->sin6_family = AF_INET6;
+    sin->sin6_len = sizeof(struct sockaddr_in6);
+    sin->sin6_port = htons(rpc->dport);
+    sin->sin6_addr = rpc->peer->addr;
 }
 
 // TODO: read options through controlp, but controlp is NULL? Maybe setsockopt() is better 
@@ -399,10 +417,11 @@ sdtp_soreceive(struct socket *so,
     struct mbuf **controlp,
     int *flagsp)
 {
-    int res = 0;
+    int res = 0, family = so->so_proto->pr_domain->dom_family;
     struct sdtp_inpcb *inp;
     struct sdtp_rpc *rpc = NULL;
     struct mbuf *control_buf = NULL;
+	uint8_t sockbuf[256];
 
     inp = (struct sdtp_inpcb *) so->so_pcb;
     if (inp == NULL) {
@@ -434,31 +453,47 @@ sdtp_soreceive(struct socket *so,
     // TODO: freeze_type = SLOW_RPC
 
     if (controlp != NULL) {
-        sdtp_fill_rcv_control(rpc, control_buf);
+        *controlp = sdtp_fill_rcv_control(rpc, control_buf);
+    }
+    if (psa != NULL) {
+        switch (family) {
+        case AF_INET: {
+            sdtp_fill_sockaddr(rpc, (struct sockaddr_in *) sockbuf); 
+            break;
+        }
+        case AF_INET6: {
+            sdtp_fill_sockaddr6(rpc, (struct sockaddr_in6 *) sockbuf);
+            break;
+        }
+        default: {
+            res = EAFNOSUPPORT;
+            goto sdtp_soreceive_done;
+        }
+        }
     }
 
 sdtp_soreceive_done:
     if (rpc) {
         if (sdtp_is_client(rpc->id)) {
             // sdtp_peer_ack(rpc);
-            // TODO: sdtp_free_rpc()
+            sdtp_rpc_free(rpc);
         } else {
             if (res >= 0) {
                 rpc->state = SDTP_RPC_IN_SERVICE;
             } else {
-                // TODO: sdtp_free_rpc()
+                sdtp_rpc_free(rpc);
             }
         }
         sdtp_rpc_unlock(rpc);
 
         rpc->msgin.num_bufs = 0;
     }
-    if (control_buf) {
-        if (res == 0) {
-            *controlp = control_buf;
-        } else {
-            m_freem(control_buf);
-        }
+    if (control_buf != NULL && res != 0) {
+        m_freem(control_buf);
+        *controlp = NULL; 
+    }
+    if (psa != NULL) {
+        *psa = (res == 0) ? sodupsockaddr((struct sockaddr *) sockbuf, M_NOWAIT) : NULL;
     }
     return res;
 }
