@@ -133,5 +133,6 @@ remove_request_interest(struct sdtp_inpcb *pcb, struct sdtp_interest *interest)
 struct sdtp_inpcb *sdtp_find_inpcb(struct sdtp_pcbmap *pcbmap, uint16_t port);
 int sdtp_inpcb_bind(struct sdtp_pcbmap *pcbmap, uint16_t port, struct sdtp_inpcb *pcb);
 int sdtp_inpcb_alloc(struct socket *so, struct sdtp *sdtp);
+void sdtp_inpcb_free(struct sdtp_inpcb *pcb);
 
 #endif

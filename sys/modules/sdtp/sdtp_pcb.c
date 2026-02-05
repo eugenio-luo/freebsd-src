@@ -144,3 +144,61 @@ sdtp_inpcb_alloc(struct socket *so, struct sdtp *sdtp)
 
     return 0;
 }
+
+void
+sdtp_inpcb_free(struct sdtp_inpcb *pcb)
+{
+    struct sdtp_rpc *rpc, *next_rpc;
+    struct sdtp_interest *interest;
+
+    mtx_lock_spin(&pcb->spinlock);
+    if (pcb->shutdown) {
+        mtx_unlock_spin(&pcb->spinlock);
+        return;
+    }
+
+    pcb->shutdown = true;
+    mtx_lock_spin(&pcb->sdtp->port_map.write_spinlock);
+    LIST_REMOVE(&pcb->pcbmap_links, hash_links);
+    mtx_unlock_spin(&pcb->sdtp->port_map.write_spinlock);
+    mtx_unlock_spin(&pcb->spinlock);
+
+    SDTP_QUEUE_LOCK(&pcb->active_rpcs);
+    SDTP_QUEUE_FOREACH_SAFE_LOCKED(rpc, &pcb->active_rpcs, active_links, next_rpc) {
+        sdtp_rpc_lock(rpc);
+        sdtp_rpc_free(rpc);
+        sdtp_rpc_unlock(rpc);
+    }
+    SDTP_QUEUE_UNLOCK(&pcb->active_rpcs);
+
+    mtx_lock_spin(&pcb->spinlock);
+    SDTP_QUEUE_LOCK(&pcb->request_interests);
+    SDTP_QUEUE_FOREACH_LOCKED(interest, &pcb->request_interests, request_links) {
+        wakeup(&interest->spinlock);
+    }
+    SDTP_QUEUE_UNLOCK(&pcb->request_interests);
+
+    SDTP_QUEUE_LOCK(&pcb->response_interests);
+    SDTP_QUEUE_FOREACH_LOCKED(interest, &pcb->response_interests, response_links) {
+        wakeup(&interest->spinlock);
+    }
+    SDTP_QUEUE_UNLOCK(&pcb->response_interests);
+    mtx_unlock_spin(&pcb->spinlock);
+
+    /*
+     TODO:
+	homa_pool_destroy(&hsk->buffer_pool);
+
+	i = 0;
+	while (!list_empty(&hsk->dead_rpcs)) {
+		homa_rpc_reap(hsk, 1000);
+		i++;
+		if (i == 5) {
+			tt_record("Freezing because reap seems hung");
+			tt_freeze();
+		}
+	}
+
+	homals_destroy_ctxs(hsk->homals_ctx_buckets);
+    */
+}
