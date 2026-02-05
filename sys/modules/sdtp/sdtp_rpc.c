@@ -523,7 +523,7 @@ sdtp_rpc_free(struct sdtp_rpc *rpc)
     SDTP_QUEUE_INSERT_TAIL(&(rpc->sdtpcb->dead_rpcs), rpc, dead_links);
 	rpc->sdtpcb->dead_bufs += rpc->msgin.num_bufs + rpc->msgout.num_bufs;
     if (SDTP_LIST_LOCK_IF_LINKED(rpc, ready_links)) {
-        SDTP_LIST_REMOVE(rpc, ready_links);
+        SDTP_LIST_REMOVE_LOCKED(rpc, ready_links);
     }
     if (rpc->interest != NULL) {
         rpc->interest->reg_rpc = NULL;
