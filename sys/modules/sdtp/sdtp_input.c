@@ -23,7 +23,7 @@ extern struct sdtp *sdtp;
 int
 sdtp_input(struct mbuf **mp, int *offp, int proto)
 {
-    struct sdtp_inpcb *pcb;
+    struct sdtp_inpcb *pcb = NULL;
     struct mbuf *m;
     struct ip *ip_header;
     struct sdtp_common_header *sdtp_header;
@@ -56,9 +56,10 @@ sdtp_input(struct mbuf **mp, int *offp, int proto)
     pcb = sdtp_find_inpcb(&sdtp->port_map, dport);
     mtx_unlock_spin(&sdtp->port_map.write_spinlock);
 
-    if (!pcb) {
+    if (pcb == NULL || pcb->socket == NULL) {
         if (ip_header->ip_v == IPVERSION) {
             icmp_error(m, ICMP_UNREACH, ICMP_UNREACH_PORT, 0, 0);
+            m = NULL;
         }
 
         goto sdtp_input_done;
@@ -80,10 +81,14 @@ sdtp_input_done:
     // TODO: free only if there is an error, we should give &m as argument instead
     // of m so when reference is taken, m becomes NULL
     if (m) {
-        mtx_assert(&pcb->spinlock, MA_NOTOWNED);
-        mtx_assert(&pcb->sdtp->port_map.write_spinlock, MA_NOTOWNED);
-
+        if (pcb) {
+            mtx_assert(&pcb->spinlock, MA_NOTOWNED);
+            mtx_assert(&pcb->sdtp->port_map.write_spinlock, MA_NOTOWNED);
+            mtx_assert(&pcb->sdtp->peers.write_spinlock, MA_NOTOWNED);
+        }
         //m_free(m);
+    } else {
+        *mp = NULL;
     }
     return IPPROTO_DONE;
 }
