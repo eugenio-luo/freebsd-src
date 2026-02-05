@@ -498,6 +498,28 @@ sdtp_soreceive_done:
     return res;
 }
 
+static void
+sdtp_close(struct socket *so)
+{
+    struct epoch_tracker et;
+    struct sdtp_inpcb *pcb;
+
+    pcb = (struct sdtp_inpcb *) so->so_pcb;
+    if (pcb == NULL) {
+        return;
+    }
+
+    sdtp_inpcb_free(pcb);
+
+    NET_EPOCH_ENTER(et);
+
+    SOCK_LOCK(so);
+    so->so_pcb = NULL;
+    SOCK_UNLOCK(so);
+
+    NET_EPOCH_EXIT(et);
+}
+
 static int
 sdtp_bind(struct socket *so, struct sockaddr *addr, struct thread *p)
 {
