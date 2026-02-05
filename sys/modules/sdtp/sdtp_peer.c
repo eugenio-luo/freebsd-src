@@ -59,6 +59,7 @@ sdtp_find_peer(struct sdtp_peermap *peermap, struct in6_addr *addr, struct inpcb
     mtx_lock_spin(&peermap->write_spinlock);
     LIST_FOREACH(peer, &peermap->buckets[bucket_idx], peermap_links) {
         if (is_ipv6_same(&peer->addr, addr)) {
+            mtx_unlock_spin(&peermap->write_spinlock);
             return peer;
         }
     }
