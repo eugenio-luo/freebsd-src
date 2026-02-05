@@ -72,6 +72,7 @@ sdtp_handoff_rpc(struct sdtp_rpc *rpc)
     struct sdtp_inpcb *pcb = rpc->sdtpcb;
 
     mtx_assert(&pcb->spinlock, MA_OWNED);
+    mtx_assert(rpc->spinlock_p, MA_OWNED);
 
     sdtp_rpc_debug(rpc, "handing off");
 
@@ -100,7 +101,17 @@ sdtp_handoff_rpc(struct sdtp_rpc *rpc)
         insert_ready_rpc(pcb, rpc);
     }
 
-    sorwakeup(pcb->socket);
+    mtx_unlock_spin(&pcb->spinlock);
+    if (rpc->spinlock_p != NULL) {
+        sdtp_rpc_unlock(rpc);
+    }
+
+    sdtp_sorwakeup(pcb);
+
+    mtx_lock_spin(&pcb->spinlock);
+    if (rpc->spinlock_p != NULL) {
+        sdtp_rpc_lock(rpc);
+    }
     return;
 
 sdtp_handoff_rpc_waiting:

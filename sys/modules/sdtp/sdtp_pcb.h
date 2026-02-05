@@ -130,6 +130,7 @@ remove_request_interest(struct sdtp_inpcb *pcb, struct sdtp_interest *interest)
     atomic_store_int(&interest->is_request_atomic, false);
 }
 
+void sdtp_sorwakeup(struct sdtp_inpcb *pcb);
 struct sdtp_inpcb *sdtp_find_inpcb(struct sdtp_pcbmap *pcbmap, uint16_t port);
 int sdtp_inpcb_bind(struct sdtp_pcbmap *pcbmap, uint16_t port, struct sdtp_inpcb *pcb);
 int sdtp_inpcb_alloc(struct socket *so, struct sdtp *sdtp);

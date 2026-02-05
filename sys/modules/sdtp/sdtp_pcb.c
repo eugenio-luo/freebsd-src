@@ -19,6 +19,23 @@
 
 extern struct sdtp_zones zones;
 
+void
+sdtp_sorwakeup(struct sdtp_inpcb *pcb)
+{
+    struct epoch_tracker et;
+
+    if (!pcb->shutdown) {
+        NET_EPOCH_ENTER(et);
+
+        SOCK_LOCK(pcb->socket);
+        KASSERT(pcb->socket != NULL, ("pcb socket must be valid"));
+        sorwakeup(pcb->socket);
+        SOCK_UNLOCK(pcb->socket);
+
+        NET_EPOCH_EXIT(et);
+    }
+}
+
 // TODO: Currently using spinlocks for readers and pcb_init! Should be using RCU operations
 
 struct sdtp_inpcb *
