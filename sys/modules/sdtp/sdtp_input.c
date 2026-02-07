@@ -33,13 +33,11 @@ sdtp_input(struct mbuf **mp, int *offp, int proto)
 
     m = *mp;
     iphlen = *offp;
-
     offset = iphlen + sizeof(struct sdtp_common_header);
-    if (m->m_len < offset) {
-        m = m_pullup(m, offset);
-        if (m == NULL) {
-            goto sdtp_input_done;
-        }
+
+    m = m_pullup(m, offset);
+    if (m == NULL) {
+        goto sdtp_input_done;
     }
     ip_header = mtod(m, struct ip *);
     sdtp_header = (struct sdtp_common_header *)((caddr_t)ip_header + iphlen);
