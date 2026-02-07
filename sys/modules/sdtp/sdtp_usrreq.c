@@ -32,16 +32,6 @@
 extern struct sdtp *sdtp;
 extern struct sdtp_zones zones;
 
-/*
- * 
- * TODO: 20251124
- * 1. syscall to send as client (request) -> copy from userspace buffer, printf 
- * 2. kernel creates a mbuf, copy userspace buffer into mbuf
- * 3. find the ip peer, then send to ip layer
- * 4. you should see a proper packet on tcpdump 
- *
- */
-
 #ifdef INET
 
 static int
