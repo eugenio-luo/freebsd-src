@@ -26,6 +26,18 @@ MALLOC_DEFINE(M_SDTP_PEERMAP, "sdtp peermap", "SDTP peermap buckets");
 DPCPU_DEFINE(struct sdtp_core, sdtp_cores);
 struct sdtp_zones zones;
 
+int sdtp_header_lengths[] = {
+    sizeof(struct sdtp_data_header), /* TODO: allow only trailer */
+    sizeof(struct sdtp_grant_header),
+    sizeof(struct sdtp_resend_header),
+    sizeof(struct sdtp_unknown_header),
+    sizeof(struct sdtp_busy_header),
+    sizeof(struct sdtp_cutoffs_header),
+    sizeof(struct sdtp_freeze_header),
+    sizeof(struct sdtp_need_ack_header),
+    sizeof(struct sdtp_ack_header)
+};
+
 static int 
 sdtp_zone_init(void)
 {

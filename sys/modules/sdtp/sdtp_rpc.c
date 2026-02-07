@@ -423,15 +423,22 @@ sdtp_reap_rpc(struct sdtp_inpcb *pcb, int count)
 {
 }
 
-void
+/* return either 0 if the buffer is not consumed, otherwise 1 */
+bool
 sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *pcb)
 {
     // TODO: For now without sdtp_lock_cache, I lock the rpc lock
 
     MBUF_LEN_ASSERT(m, struct sdtp_common_header);
+    KASSERT(m->m_flags & M_PKTHDR, ("mbuf must be a header mbuf"));
     VALID_PCB_ASSERT(pcb);
+    KASSERT(source != NULL, ("source must be valid"));
 
     struct sdtp_common_header *header = mtod(m, struct sdtp_common_header *);
+
+    KASSERT(header->type >= SDTP_DATA && header->type <= SDTP_ACK, ("header type must be valid (%x)", header->type));
+    KASSERT(m->m_pkthdr.len >= sdtp_header_lengths[header->type - SDTP_DATA], ("mbuf must be at least the size of its type header"));
+
     int error = 0;
     uint64_t id = sdtp_local_id(header->sender_id_be);
     struct sdtp *sdtp = pcb->sdtp;
@@ -488,16 +495,18 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
     }
 
     default:
+        KASSERT(0, ("header type must be valid (%x)", header->type));
+        __unreachable();
         break;
     }
 
     sdtp_rpc_unlock(rpc);
 
     RPC_LOCK_NOTOWNED(rpc);
-    return;
+    return true;
 
 sdtp_handle_packet_error:
-    return;
+    return false;
 }
 
 void

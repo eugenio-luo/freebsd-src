@@ -170,7 +170,7 @@ remove_ready_rpc(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc)
 struct sdtp_rpc *sdtp_find_client_rpc(struct sdtp_inpcb *pcb, uint64_t id);
 struct sdtp_rpc *sdtp_find_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, uint16_t port, uint64_t id);
 bool sdtp_is_client(uint64_t id);
-void sdtp_handle_packet(struct mbuf *m, struct in6_addr *addr, struct sdtp_inpcb *pcb);
+bool sdtp_handle_packet(struct mbuf *m, struct in6_addr *addr, struct sdtp_inpcb *pcb);
 void sdtp_rpc_lock(struct sdtp_rpc *rpc);
 void sdtp_rpc_unlock(struct sdtp_rpc *rpc);
 void sdtp_free_mbuf(struct mbuf *buf);
