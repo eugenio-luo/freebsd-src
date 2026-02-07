@@ -165,12 +165,12 @@ sdtp_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc)
 
         struct mbuf *buf = buf_entry->data;
 
-        sdtp_debug("sdtp_copy_to_user called with rpc: %#lx, buf: %#lx, buf data: %#lx\n", (uintptr_t) rpc, (uintptr_t) buf, (uintptr_t) buf->m_data);
-        KASSERT(buf->m_len >= 0, ("buf %d (%#lx) should not have negative size: %d\n", n, (uintptr_t) buf_entry, buf->m_len));
-
-        if (buf->m_len < sizeof(struct sdtp_data_header)) {
-            goto sdtp_copy_to_user_copy;
-        }
+        sdtp_debug("sdtp_copy_to_user called with rpc: %#lx, buf: %#lx, buf data: %#lx\n",
+                   (uintptr_t) rpc, (uintptr_t) buf, (uintptr_t) buf->m_data);
+        KASSERT(buf->m_flags & M_PKTHDR, ("buf must have packet header"));
+        KASSERT(buf->m_pkthdr.len >= sizeof(struct sdtp_data_header),
+                ("buf %d (size: %d) must contain within its mbuf chain the size of sdtp_data_header\n",
+                n, buf->m_pkthdr.len));
 
         buf = m_pullup(buf, sizeof(struct sdtp_data_header));
         if (!buf) {
@@ -205,10 +205,9 @@ sdtp_copy_to_user_copy:
         for (i = 0; i < n && !error; ++i) {
             buf = bufs[i];
 
-            buf = m_pullup(buf, sizeof(struct sdtp_data_header));
-            if (!buf) {
-                continue;
-            }
+            KASSERT(buf->m_len >= sizeof(struct sdtp_data_header),
+                    ("buf %d (%d) must contain the size of sdtp_data_header\n",
+                    n, buf->m_len));
 
             header = mtod(buf, struct sdtp_data_header *); 
             int rem = ntohl(header->data_segment.segment_length_be);
@@ -218,11 +217,16 @@ sdtp_copy_to_user_copy:
                 continue;
             }
 
+            KASSERT(buf->m_len - sizeof(*header) > 0, ("buf size without header must be positive\n"));
+            uiomove(mtod(buf, char *) + sizeof(*header), buf->m_len - sizeof(*header), uio);
+                sdtp_rpc_debug(rpc, "copying %d length to userspace", buf->m_len - sizeof(*header));
+
             struct mbuf *m = buf->m_next;
             for (; m != NULL && uio->uio_resid > 0 && rem > 0; m = m->m_next) {
                 int len = min(m->m_len, uio->uio_resid);
                 len = min(m->m_len, rem);
 
+                sdtp_rpc_debug(rpc, "copying %d length to userspace", len);
                 error = uiomove(mtod(m, char *), len, uio);
                 if (error) {
                     break;
