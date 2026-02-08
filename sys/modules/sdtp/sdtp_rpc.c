@@ -290,18 +290,27 @@ sdtp_add_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_data_header *h
 {
     RPC_LOCK_OWNED(rpc);
     MBUF_LEN_ASSERT(m, struct sdtp_data_header);
+    KASSERT(m->m_flags & M_PKTHDR, ("mbuf must be a header mbuf"));
 
     struct sdtp_packet_tailq_entry *packet, *new;
     int offset = ntohl(header->data_segment.offset_be);
-    int data_bytes = ntohl(header->data_segment.segment_length_be);
+    int data_bytes = m->m_pkthdr.len - sizeof(struct sdtp_data_header);
+
+    KASSERT(data_bytes > 0, ("data_bytes must be positive"));
 
     int floor = rpc->msgin.copied_out;
     int ceiling = rpc->msgin.total_length;
 
     TAILQ_FOREACH_REVERSE(packet, &rpc->msgin.packets, sdtp_packet_tailq, link) {
+
+        KASSERT(packet->data->m_flags & M_PKTHDR, ("packet must be a header mbuf"));
+
         struct sdtp_data_header *h = mtod(packet->data, struct sdtp_data_header *);
         int tmp_off = ntohl(h->data_segment.offset_be);
-        int tmp_dbytes = ntohl(h->data_segment.segment_length_be);
+        int tmp_dbytes = packet->data->m_pkthdr.len - sizeof(struct sdtp_data_header);
+
+        KASSERT(tmp_dbytes > 0, ("tmp_dbytes must be positive"));
+
         if (tmp_off < offset) {
             floor = tmp_off + tmp_dbytes;
             break;

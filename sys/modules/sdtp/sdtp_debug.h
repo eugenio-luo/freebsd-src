@@ -173,10 +173,9 @@ sdtp_data_header_debug(struct sdtp_data_header *header, const char *fmt, ...)
     va_list args;
     int len;
 
-    len = snprintf(buf, sizeof(buf), "DATA PKT [sport: %d, dport: %d, len: %d, offset: %d, segment length: %d]",
+    len = snprintf(buf, sizeof(buf), "DATA PKT [sport: %d, dport: %d, len: %d, offset: %d]",
                ntohs(header->common.sport_be), ntohs(header->common.dport_be),
-               ntohl(header->message_length_be), ntohl(header->data_segment.offset_be),
-               ntohl(header->data_segment.segment_length_be));
+               ntohl(header->message_length_be), ntohl(header->data_segment.offset_be));
 
     va_start(args, fmt);
     sdtp_opt_fmt_print(&buf[0], len, fmt, args);

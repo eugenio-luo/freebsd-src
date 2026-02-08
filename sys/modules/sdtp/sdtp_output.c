@@ -207,10 +207,8 @@ sdtp_create_packet_mbuf(struct sdtp_rpc *rpc, struct uio *uio, int m_size)
 
     // TODO: PLACEHOLDER data segment
     header->data_segment.offset_be = 0;
-    header->data_segment.segment_length_be = htonl(m_size - remaining);
-    header->data_segment.ack.client_id_be = htobe64(rpc->id);
-    header->data_segment.ack.client_port_be = htons(rpc->sdtpcb->port);
-    header->data_segment.ack.server_port_be = htons(rpc->dport);
+    header->ack.client_id_be = htobe64(rpc->id);
+    header->ack.server_port_be = htons(rpc->dport);
 
     res.buf = m;
     res.result = m_size - remaining;

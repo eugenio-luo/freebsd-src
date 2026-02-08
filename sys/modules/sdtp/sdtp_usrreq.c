@@ -179,7 +179,7 @@ sdtp_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc)
         sdtp_free_packet_tailq_entry(buf_entry);
 
         --rpc->msgin.num_bufs;
-        rpc->msgin.copied_out = segment_offset + ntohl(header->data_segment.segment_length_be);
+        rpc->msgin.copied_out = segment_offset + buf->m_pkthdr.len - sizeof(struct sdtp_data_header);
 
         if (n < MAX_BUFS) {
             continue;
@@ -200,7 +200,7 @@ sdtp_copy_to_user_copy:
                     n, buf->m_len));
 
             header = mtod(buf, struct sdtp_data_header *); 
-            int rem = ntohl(header->data_segment.segment_length_be);
+            int rem = buf->m_pkthdr.len - sizeof(struct sdtp_data_header);
 
             if (rem <= sizeof(*header) || rem > buf->m_pkthdr.len) {
                 error = EINVAL;

@@ -45,36 +45,34 @@ struct sdtp_recvmsg_args {
 struct sdtp_common_header {
     uint16_t sport_be;
     uint16_t dport_be;
-    uint32_t unused1_be;
-    uint32_t unused2_be;
-    uint8_t  d_off;
+    uint32_t sequence_be; /* TCP header sequence number */
+    char     ack[3];      /* unused */
     uint8_t  type;
-    uint16_t unused3;
-    uint16_t checksum_be;
-    uint16_t unused4;
+    uint8_t  d_off;
+    uint8_t  flags;
+    uint16_t window_be;   /* unused */
+    uint16_t checksum_be; /* unused */
+    uint16_t urgent_be;
     uint64_t sender_id_be;
 } __attribute__((packed));
 
 struct sdtp_ack {
     uint64_t client_id_be;
-    uint16_t client_port_be;
     uint16_t server_port_be;
 } __attribute__((packed));
 
 struct sdtp_data_segment {
     uint32_t        offset_be;
-    uint32_t        segment_length_be;
-    struct sdtp_ack ack;
-    char            data[0];
 } __attribute__((packed));
 
 struct sdtp_data_header {
     struct sdtp_common_header common;
     uint32_t                  message_length_be;
     uint32_t                  incoming_be;
+    struct sdtp_ack           ack;
     uint16_t                  cutoff_version_be;
     uint8_t                   retransmit;
-    uint8_t                   padding;
+    char                      padding[3];
     struct sdtp_data_segment  data_segment; /* first of many data segments */
 } __attribute__((packed));
 CTASSERT(sizeof(struct sdtp_data_header) <= SDTP_MAX_HEADER);
@@ -84,7 +82,7 @@ CTASSERT(((sizeof(struct sdtp_data_header) - sizeof(struct sdtp_data_segment)) &
 struct sdtp_grant_header {
     struct sdtp_common_header common;
     uint32_t                  offset_be;
-    uint8_t                   priority_be;
+    uint8_t                   priority;
 } __attribute__((packed));
 CTASSERT(sizeof(struct sdtp_grant_header) <= SDTP_MAX_HEADER);
 
@@ -92,7 +90,7 @@ struct sdtp_resend_header {
     struct sdtp_common_header common;
     uint32_t                  offset_be;
     uint32_t                  length_be;
-    uint8_t                   priority_be;
+    uint8_t                   priority;
 } __attribute__((packed));
 CTASSERT(sizeof(struct sdtp_resend_header) <= SDTP_MAX_HEADER);
 
