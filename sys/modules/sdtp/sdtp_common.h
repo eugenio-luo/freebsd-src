@@ -15,8 +15,7 @@
 
 #include <netinet/in.h>
 
-// #define IPPROTO_SDTP 146
-// #define IPPROTO_SDTP 0xFD
+#define IPPROTO_SDTP 146
 #define SDTP_MAX_MESSAGE_LENGTH 1000000
 #define SDTP_MIN_PKT_LENGTH 26
 #define SDTP_MAX_HEADER 90
