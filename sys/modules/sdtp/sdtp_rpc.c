@@ -369,6 +369,10 @@ sdtp_data_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_inpcb *pcb)
 
     sdtp_data_header_debug(header, NULL);
 
+    if (ntohl(header->data_segment.offset_be) == -1) {
+        header->data_segment.offset_be = header->common.sequence_be;
+    }
+
     if (rpc->state != SDTP_RPC_INCOMING) {
         if (sdtp_is_client(rpc->id)) {
             if (rpc->state != SDTP_RPC_OUTGOING) {
@@ -468,6 +472,9 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
                 goto sdtp_handle_packet_error;
             }
             struct sdtp_data_header *data_header = mtod(m, struct sdtp_data_header *);
+            if (ntohl(data_header->data_segment.offset_be) == -1) {
+                data_header->data_segment.offset_be = data_header->common.sequence_be;
+            }
 
             rpc = sdtp_new_server_rpc(pcb, source, data_header, &error);
             if (error) {
