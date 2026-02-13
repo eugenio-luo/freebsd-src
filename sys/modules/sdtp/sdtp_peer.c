@@ -20,6 +20,7 @@
 
 #include <netinet/in.h>
 #include <netinet6/in6_fib.h>
+#include <netinet/in_fib.h>
 
 extern struct sdtp_zones zones;
 
@@ -41,8 +42,14 @@ static struct nhop_object *
 sdtp_resolve_nh(struct in6_addr *addr, int *error)
 {
     struct nhop_object *nh;
+    struct in_addr tmp;
 
-    nh = fib6_lookup(RT_DEFAULT_FIB, addr, 0, NHR_NONE, 0);
+    if (IN6_IS_ADDR_V4MAPPED(addr)) {
+        ipv6_to_ipv4(addr, &tmp);
+        nh = fib4_lookup(RT_DEFAULT_FIB, tmp, 0, NHR_NONE, 0);
+    } else {
+        nh = fib6_lookup(RT_DEFAULT_FIB, addr, 0, NHR_NONE, 0);
+    }
 
     if (nh == NULL) {
         *error = EHOSTUNREACH;

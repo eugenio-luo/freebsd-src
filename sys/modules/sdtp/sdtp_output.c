@@ -24,6 +24,10 @@
 #include <netinet6/ip6_var.h>
 
 #include <net/route/nhop.h>
+#include <net/if.h>
+#include <net/if_types.h>
+#include <net/if_var.h>
+#include <net/if_private.h>
 
 #include <machine/in_cksum.h>
 
@@ -429,8 +433,14 @@ sdtp_message_out(struct sdtp_rpc *rpc, struct uio *uio, bool immediate_send)
         goto sdtp_message_out_error;
     }
 
+    KASSERT(NH_IS_VALID(rpc->peer->nh), ("nh must be valid"));
     mtu = rpc->peer->nh->nh_mtu;
+    sdtp_debug("ifp=%s mtu=%d\n",
+       rpc->peer->nh->nh_ifp->if_xname,
+       rpc->peer->nh->nh_ifp->if_mtu);
     max_packet_size = mtu - IP_SDTP_HEADER_SIZE(rpc, struct sdtp_data_header);
+    KASSERT(max_packet_size > 0, ("max_packet_size must be positive"));
+    sdtp_rpc_debug(rpc, "mtu: %d, max_packet_size: %d", mtu, max_packet_size);
 
     if (max_packet_size < 0) {
         error = EINVAL;
