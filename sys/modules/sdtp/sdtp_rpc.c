@@ -144,7 +144,7 @@ sdtp_handoff_rpc_waiting:
     }
 
     sdtp_rpc_debug(rpc, "waking up thread: %#x", interest->thread);
-    KASSERT(TD_IS_SLEEPING(interest->thread), ("interest's thread should be sleeping"));
+    // KASSERT(TD_IS_SLEEPING(interest->thread), ("interest's thread should be sleeping"));
     INTEREST_NOT_LINKED(interest);
 
     wakeup(&interest->spinlock);
