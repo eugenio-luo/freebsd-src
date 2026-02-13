@@ -47,7 +47,7 @@ void sdtp_free_mbuf(struct mbuf *buf)
     KASSERT(buf != NULL, ("mbuf should be valid"));
     KASSERT(buf->m_len > 0, ("mbuf size should be at least 0"));
 
-    sdtp_debug("buf %#lx free'd", (uintptr_t) buf);
+    sdtp_debug("buf %#lx free'd\n", (uintptr_t) buf);
     m_freem(buf);
 }
 
@@ -298,7 +298,7 @@ sdtp_add_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_data_header *h
     int offset = ntohl(header->data_segment.offset_be);
     int data_bytes = m->m_pkthdr.len - sizeof(struct sdtp_data_header);
 
-    sdtp_data_header_debug(header, "size: %d\n", data_bytes);
+    sdtp_data_header_debug(header, "size: %d", data_bytes);
 
     KASSERT(data_bytes > 0, ("data_bytes must be positive"));
 
@@ -455,7 +455,7 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
 
     struct sdtp_common_header *header = mtod(m, struct sdtp_common_header *);
 
-    KASSERT(header->type >= SDTP_DATA && header->type <= SDTP_ACK, ("header type must be valid (%x)", header->type));
+    KASSERT(header->type >= SDTP_DATA && header->type <= SDTP_ACK, ("header type must be valid (%#x)", header->type));
     KASSERT(m->m_pkthdr.len >= sdtp_header_lengths[header->type - SDTP_DATA], ("mbuf must be at least the size of its type header"));
 
     int error = 0;
@@ -510,10 +510,7 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
     switch (header->type) {
     case SDTP_DATA: {
         int incoming_delta = sdtp_data_packet(m, rpc, pcb);
-
         atomic_add_64(&sdtp->total_incoming_atomic, incoming_delta);
-
-        // TODO: sdtp_rpc_reap
         break;
     }
 
@@ -525,12 +522,22 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
         break;
     }
 
+    case SDTP_GRANT:
+    case SDTP_RESEND:
+    case SDTP_UNKNOWN:
+    case SDTP_BUSY:
+    case SDTP_FREEZE:
+    case SDTP_NEED_ACK:
+    case SDTP_ACK:
+        break;
+
     default:
-        //KASSERT(0, ("header type must be valid (%x)", header->type));
-        //__unreachable();
+        KASSERT(0, ("switch statement: header type must be valid (%#x)", header->type));
+        __unreachable();
         break;
     }
 
+    // TODO: sdtp_rpc_reap
     sdtp_rpc_unlock(rpc);
 
     RPC_LOCK_NOTOWNED(rpc);
