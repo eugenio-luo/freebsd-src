@@ -230,15 +230,15 @@
 #define SDTP_LIST_EMPTY(Q) LIST_EMPTY_ATOMIC(&((Q)->q))
 
 #define SDTP_LIST_FIRST(Q, TYPE) \
-    ({SDTP_QUEUE_LOCK(Q); \
+    ({SDTP_LIST_LOCK(Q); \
       struct TYPE *retval = LIST_FIRST(&((Q)->q)); \
-      SDTP_QUEUE_UNLOCK(Q); \
+      SDTP_LIST_UNLOCK(Q); \
       retval; })
 
 #define SDTP_LIST_LOCK_IF_LINKED(ELEM, LINK) \
     ({bool linked = (ELEM)->LINK.owner != NULL; \
       if (linked) { \
-        SDTP_QUEUE_LOCK((ELEM)->LINK.owner); \
+        SDTP_LIST_LOCK((ELEM)->LINK.owner); \
       } \
       linked; })
 
