@@ -526,8 +526,8 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
     }
 
     default:
-        KASSERT(0, ("header type must be valid (%x)", header->type));
-        __unreachable();
+        //KASSERT(0, ("header type must be valid (%x)", header->type));
+        //__unreachable();
         break;
     }
 
