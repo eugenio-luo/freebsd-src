@@ -167,6 +167,7 @@ sdtp_create_packet_mbuf(struct sdtp_rpc *rpc, struct uio *uio, int m_size, int o
         res.result = -ENOMEM;
         goto sdtp_create_packet_mbuf_error;
     }
+    memset(mtod(m, char *), 0, MHLEN);
 
     for (remaining = m_size - header_len, tmp = m; remaining > 0 && uio->uio_resid > 0; tmp = tmp->m_next) {
         //struct sdtp_data_segment *data_segment;
