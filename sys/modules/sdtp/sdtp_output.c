@@ -142,7 +142,7 @@ struct packet_mbuf_result {
  * m_size represents maximum size of packet INCLUDING header
  */
 static struct packet_mbuf_result
-sdtp_create_packet_mbuf(struct sdtp_rpc *rpc, struct uio *uio, int m_size)
+sdtp_create_packet_mbuf(struct sdtp_rpc *rpc, struct uio *uio, int m_size, int offset)
 {
     VALID_RPC_ASSERT(rpc);
 
@@ -211,9 +211,8 @@ sdtp_create_packet_mbuf(struct sdtp_rpc *rpc, struct uio *uio, int m_size)
     header->cutoff_version_be = rpc->peer->cutoff_version_be;
 	header->retransmit = 0;
 
-    // TODO: PLACEHOLDER data segment
-    header->data_segment.offset_be = 0;
     header->ack.client_id_be = htobe64(rpc->id);
+    header->data_segment.offset_be = ntohl(offset);
     header->ack.server_port_be = htons(rpc->dport);
 
     res.buf = m;
@@ -243,7 +242,7 @@ sdtp_fill_packets_slist(struct sdtp_rpc *rpc, struct uio *uio, int max_packet_si
     KASSERT(uio != NULL, ("uio must be valid"));
     KASSERT(uio->uio_resid > 0, ("uio resid must be positive"));
 
-    int bytes_left, error = 0;
+    int bytes_left, offset = 0, error = 0;
     struct sdtp_packet_slist_entry *prev = NULL;
 
     for (bytes_left = rpc->msgout.length; bytes_left > 0;) {
@@ -256,12 +255,13 @@ sdtp_fill_packets_slist(struct sdtp_rpc *rpc, struct uio *uio, int max_packet_si
 
         sdtp_rpc_unlock(rpc);
 
-        res = sdtp_create_packet_mbuf(rpc, uio, m_size);
+        res = sdtp_create_packet_mbuf(rpc, uio, m_size, offset);
         if (res.result < 0) {
             error = -res.result;
             goto sdtp_fill_packets_slist_error;
         }
         bytes_left -= res.result;
+        offset += res.result;
 
         entry = SDTP_ZONE_GET(zones.sdtp_zone_packet_slist_entry,
                               struct sdtp_packet_slist_entry);
