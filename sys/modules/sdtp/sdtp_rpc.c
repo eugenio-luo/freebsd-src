@@ -97,13 +97,13 @@ sdtp_handoff_rpc(struct sdtp_rpc *rpc)
         if (interest) {
             goto sdtp_handoff_rpc_waiting;
         }
-        insert_ready_rpc(pcb, rpc);
+        insert_ready_rpc(pcb, &pcb->ready_responses, rpc);
     } else {
         interest = SDTP_QUEUE_FIRST(&pcb->request_interests, sdtp_interest);
         if (interest) {
             goto sdtp_handoff_rpc_waiting;
         }
-        insert_ready_rpc(pcb, rpc);
+        insert_ready_rpc(pcb, &pcb->ready_requests, rpc);
     }
 
     mtx_unlock_spin(&pcb->spinlock);

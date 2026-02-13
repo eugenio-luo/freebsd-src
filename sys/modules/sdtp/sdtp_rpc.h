@@ -148,13 +148,13 @@ struct sdtp_rpc {
 };
 
 static inline void
-insert_ready_rpc(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc)
+insert_ready_rpc(struct sdtp_inpcb *pcb, struct sdtp_rpc_mlist *list, struct sdtp_rpc *rpc)
 {
     mtx_assert(&pcb->spinlock, MA_OWNED);
     MPASS(atomic_load_int(&rpc->is_ready_atomic) == false);
 
     atomic_store_int(&rpc->is_ready_atomic, true);
-    SDTP_LIST_INSERT_HEAD(&pcb->ready_responses, rpc, ready_links);
+    SDTP_LIST_INSERT_HEAD(list, rpc, ready_links);
 }
 
 static inline void
