@@ -517,6 +517,14 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
         break;
     }
 
+    case SDTP_CUTOFFS: {
+        struct sdtp_cutoffs_header *cutoffs_header;
+
+        cutoffs_header = mtod(m, struct sdtp_cutoffs_header *);
+        rpc->peer->cutoff_version_be = cutoffs_header->cutoff_version_be;
+        break;
+    }
+
     default:
         KASSERT(0, ("header type must be valid (%x)", header->type));
         __unreachable();
