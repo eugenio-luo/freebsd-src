@@ -202,11 +202,11 @@
 
 #define SDTP_LIST_REMOVE(ELEM, LINK) \
     do { \
-        SDTP_LIST_LOCK((ELEM)->LINK.owner); \
         MPASS((ELEM)->LINK.owner != NULL); \
+        SDTP_LIST_LOCK((ELEM)->LINK.owner); \
         LIST_REMOVE(ELEM, LINK.entry); \
-        (ELEM)->LINK.owner = NULL; \
         SDTP_LIST_UNLOCK((ELEM)->LINK.owner); \
+        (ELEM)->LINK.owner = NULL; \
     } while (0)
 
 #define SDTP_LIST_REMOVE_LOCKED(ELEM, LINK) \
