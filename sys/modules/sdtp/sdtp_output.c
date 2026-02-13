@@ -212,8 +212,8 @@ sdtp_create_packet_mbuf(struct sdtp_rpc *rpc, struct uio *uio, int m_size, int o
     header->cutoff_version_be = rpc->peer->cutoff_version_be;
 	header->retransmit = 0;
 
-    header->ack.client_id_be = htobe64(rpc->id);
     header->data_segment.offset_be = ntohl(offset);
+    header->ack.client_id_be = htobe64(rpc->id ^ 1);
     header->ack.server_port_be = htons(rpc->dport);
 
     res.buf = m;
