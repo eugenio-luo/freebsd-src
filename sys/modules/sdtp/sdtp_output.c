@@ -374,9 +374,12 @@ sdtp_send_next_data(struct sdtp_rpc *rpc, bool force)
 
         KASSERT(buf->m_flags & M_PKTHDR, ("First packet buf need to contain a header"));
         KASSERT(!(buf->m_flags & M_EXT), ("buf must not have external storage"));
-        sdtp_debug("packet length: %d\n", buf->m_pkthdr.len);
+        sdtp_rpc_debug(rpc, "packet length: %d", buf->m_pkthdr.len);
 
-        if (rpc->msgout.next_xmit_offset >= rpc->msgout.granted) {
+        if (rpc->msgout.next_xmit_offset > rpc->msgout.granted) {
+            sdtp_rpc_debug(rpc, "rpc trying to send %d bytes over granted bytes %d",
+                           rpc->msgout.next_xmit_offset,
+                           rpc->msgout.granted);
             break;
         }
 
