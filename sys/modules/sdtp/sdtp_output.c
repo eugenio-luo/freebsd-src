@@ -138,7 +138,9 @@ struct packet_mbuf_result {
     int result;
 };
 
-// TODO: does packet size include headers or not?
+/*
+ * m_size represents maximum size of packet INCLUDING header
+ */
 static struct packet_mbuf_result
 sdtp_create_packet_mbuf(struct sdtp_rpc *rpc, struct uio *uio, int m_size)
 {
@@ -166,7 +168,7 @@ sdtp_create_packet_mbuf(struct sdtp_rpc *rpc, struct uio *uio, int m_size)
         goto sdtp_create_packet_mbuf_error;
     }
 
-    for (remaining = m_size, tmp = m; remaining > 0 && uio->uio_resid > 0; tmp = tmp->m_next) {
+    for (remaining = m_size - header_len, tmp = m; remaining > 0 && uio->uio_resid > 0; tmp = tmp->m_next) {
         //struct sdtp_data_segment *data_segment;
         char *datap = NULL;
         int len = min(min(uio->uio_resid, remaining), MLEN);
@@ -193,7 +195,7 @@ sdtp_create_packet_mbuf(struct sdtp_rpc *rpc, struct uio *uio, int m_size)
         KASSERT(uio->uio_resid >= 0, ("uio_resid must be always positive or 0"));
     }
 
-    m->m_pkthdr.len = header_len + m_size - remaining;
+    m->m_pkthdr.len = m_size - remaining;
     m->m_len = header_len;
 
     struct sdtp_data_header *header =
@@ -215,7 +217,7 @@ sdtp_create_packet_mbuf(struct sdtp_rpc *rpc, struct uio *uio, int m_size)
     header->ack.server_port_be = htons(rpc->dport);
 
     res.buf = m;
-    res.result = m_size - remaining;
+    res.result = m_size - header_len - remaining;
 
     KASSERT(m->m_pkthdr.len > 0, ("mbuf chain total length should be positive"));
     KASSERT(res.buf != NULL, ("res buf must be valid"));
@@ -265,6 +267,10 @@ sdtp_fill_packets_slist(struct sdtp_rpc *rpc, struct uio *uio, int max_packet_si
                               struct sdtp_packet_slist_entry);
         entry->data = res.buf;
         KASSERT(!(entry->data->m_flags & M_EXT), ("buf must not have external storage"));
+        KASSERT(entry->data->m_pkthdr.len <= max_packet_size + IP_SDTP_HEADER_SIZE(rpc, struct sdtp_data_header),
+                ("buf size (%d) must be less or equal to MTU %lu",
+                 entry->data->m_pkthdr.len, max_packet_size + IP_SDTP_HEADER_SIZE(rpc, struct sdtp_data_header)));
+        sdtp_rpc_debug(rpc, "buffer slist length: %d", entry->data->m_pkthdr.len);
 
         sdtp_rpc_lock(rpc);
         if (prev == NULL) {
