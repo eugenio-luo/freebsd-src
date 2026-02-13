@@ -93,7 +93,9 @@ sdtp_register_interest(struct sdtp_interest *interest, struct sdtp_inpcb *pcb, i
 
     atomic_store_int(&interest->locked_atomic, 0);
     if (flags & SDTP_RECVMSG_RESPONSE) {
+        sdtp_pcb_debug(pcb, "Check if there are response RPCs");
         if (!SDTP_LIST_EMPTY(&pcb->ready_responses)) {
+            sdtp_pcb_debug(pcb, "There are response RPCs in PCB list");
             rpc = SDTP_LIST_FIRST(&pcb->ready_responses, sdtp_rpc);
             goto sdtp_register_interest_claim_rpc;
         }
@@ -101,7 +103,9 @@ sdtp_register_interest(struct sdtp_interest *interest, struct sdtp_inpcb *pcb, i
         insert_response_interest(pcb, interest);
     }
     if (flags & SDTP_RECVMSG_REQUEST) {
+        sdtp_pcb_debug(pcb, "Check if there are request RPCs");
         if (!SDTP_LIST_EMPTY(&pcb->ready_requests)) {
+            sdtp_pcb_debug(pcb, "There are request RPCs in PCB list");
             rpc = SDTP_LIST_FIRST(&pcb->ready_requests, sdtp_rpc);
 
             if (atomic_load_int(&interest->is_response_atomic)) {
@@ -255,6 +259,7 @@ sdtp_wait_for_message(struct sdtp_inpcb *pcb, int flags, uint64_t id, struct uio
     flags |= SDTP_RECVMSG_REQUEST;
 
     while (1) {
+        sdtp_pcb_debug(pcb, "check if there is waiting interest");
         *error = sdtp_register_interest(&interest, pcb, flags, id);
         rpc = (struct sdtp_rpc *) atomic_load_ptr(&interest.ready_rpc_atomic);
         if (rpc != NULL || *error != 0) {
@@ -272,6 +277,7 @@ sdtp_wait_for_message(struct sdtp_inpcb *pcb, int flags, uint64_t id, struct uio
         }
 
         poll_start = now = get_cyclecount();
+        sdtp_pcb_debug(pcb, "spin and check");
         while (1) {
             rpc = (struct sdtp_rpc *) atomic_load_ptr(&interest.ready_rpc_atomic);
             if (rpc) {

@@ -84,21 +84,25 @@ sdtp_handoff_rpc(struct sdtp_rpc *rpc)
     if ((atomic_load_32(&rpc->flags_atomic) & RPC_HANDING_OFF)
         || atomic_load_int(&rpc->is_ready_atomic))
     {
+        sdtp_rpc_debug(rpc, "already handing off");
         return;
     }
 
     if (rpc->interest) {
+        sdtp_rpc_debug(rpc, "already has interest");
         interest = rpc->interest;
         goto sdtp_handoff_rpc_waiting;
     }
 
     if (sdtp_is_client(rpc->id)) {
+        sdtp_rpc_debug(rpc, "check if thread is waiting for response");
         interest = SDTP_QUEUE_FIRST(&pcb->response_interests, sdtp_interest);
         if (interest) {
             goto sdtp_handoff_rpc_waiting;
         }
         insert_ready_rpc(pcb, &pcb->ready_responses, rpc);
     } else {
+        sdtp_rpc_debug(rpc, "check if thread is waiting for request");
         interest = SDTP_QUEUE_FIRST(&pcb->request_interests, sdtp_interest);
         if (interest) {
             goto sdtp_handoff_rpc_waiting;
@@ -111,6 +115,7 @@ sdtp_handoff_rpc(struct sdtp_rpc *rpc)
         sdtp_rpc_unlock(rpc);
     }
 
+    sdtp_rpc_debug(rpc, "wake up pcb");
     sdtp_sorwakeup(pcb);
 
     mtx_lock_spin(&pcb->spinlock);
@@ -120,6 +125,7 @@ sdtp_handoff_rpc(struct sdtp_rpc *rpc)
     return;
 
 sdtp_handoff_rpc_waiting:
+    sdtp_rpc_debug(rpc, "there is a thread waiting");
     atomic_set_32(&rpc->flags_atomic, RPC_HANDING_OFF);
     atomic_store_32(&interest->locked_atomic, 0);
 
