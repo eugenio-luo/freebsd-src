@@ -205,9 +205,9 @@ sdtp_create_packet_mbuf(struct sdtp_rpc *rpc, struct uio *uio, int m_size)
     SDTP_SET_DOFF(header);
     header->common.type = SDTP_DATA;
     header->common.sender_id_be = htobe64(rpc->id);
-	header->message_length_be = htonl(m_size - remaining);
+    header->message_length_be = htonl(rpc->msgout.length);
     // I'm not sure if this is correct?
-    header->incoming_be = htonl(m_size - remaining);
+    header->incoming_be = htonl(rpc->msgout.length);
     header->cutoff_version_be = rpc->peer->cutoff_version_be;
 	header->retransmit = 0;
 
