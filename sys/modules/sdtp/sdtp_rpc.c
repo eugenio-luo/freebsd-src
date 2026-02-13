@@ -567,16 +567,18 @@ sdtp_rpc_free(struct sdtp_rpc *rpc)
     rpc->state = SDTP_RPC_DEAD;
     // TODO: sdtp_remove_from_grantable
 
+    /* TODO: somehow sdtp_pcb_free hold the lock for this? */
     if (SDTP_LIST_LINKED(rpc, hash_links)) {
         SDTP_LIST_REMOVE_LOCKED(rpc, hash_links);
     }
+    /* we don't need to lock here sdtp_pcb_free own the lock */
     if (SDTP_QUEUE_LINKED(rpc, active_links)) {
         SDTP_QUEUE_REMOVE_LOCKED(&(rpc->sdtpcb->active_rpcs), rpc, active_links);
     }
     SDTP_QUEUE_INSERT_TAIL(&(rpc->sdtpcb->dead_rpcs), rpc, dead_links);
 	rpc->sdtpcb->dead_bufs += rpc->msgin.num_bufs + rpc->msgout.num_bufs;
     if (SDTP_LIST_LOCK_IF_LINKED(rpc, ready_links)) {
-        SDTP_LIST_REMOVE_LOCKED(rpc, ready_links);
+        SDTP_LIST_REMOVE_LOCKED_THEN_UNLOCK(rpc, ready_links);
     }
     if (rpc->interest != NULL) {
         rpc->interest->reg_rpc = NULL;
