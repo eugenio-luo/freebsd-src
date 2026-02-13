@@ -463,7 +463,12 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
     struct sdtp *sdtp = pcb->sdtp;
     struct sdtp_rpc *rpc;
 
-    sdtp_header_debug(header, "is_client: %d", sdtp_is_client(id));
+    m = m_pullup(m, sdtp_header_lengths[header->type - SDTP_DATA]);
+    if (!m) {
+        goto sdtp_handle_packet_error;
+    }
+
+    sdtp_header_debug(header, "id: %x, is_client: %d", id, sdtp_is_client(id));
 
     if (!sdtp_is_client(id)) {
         if (header->type == SDTP_DATA) {
@@ -504,10 +509,6 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
 
     switch (header->type) {
     case SDTP_DATA: {
-        m = m_pullup(m, sizeof(struct sdtp_data_header));
-        if (!m) {
-            break;
-        }
         int incoming_delta = sdtp_data_packet(m, rpc, pcb);
 
         atomic_add_64(&sdtp->total_incoming_atomic, incoming_delta);
