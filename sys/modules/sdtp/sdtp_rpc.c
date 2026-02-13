@@ -26,6 +26,8 @@
 
 extern struct sdtp_zones zones;
 
+// TODO: there is a possible lock reversal between rpc lock and pcb lock
+
 void
 sdtp_rpc_lock(struct sdtp_rpc *rpc)
 {
@@ -296,6 +298,8 @@ sdtp_add_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_data_header *h
     int offset = ntohl(header->data_segment.offset_be);
     int data_bytes = m->m_pkthdr.len - sizeof(struct sdtp_data_header);
 
+    sdtp_data_header_debug(header, "size: %d\n", data_bytes);
+
     KASSERT(data_bytes > 0, ("data_bytes must be positive"));
 
     int floor = rpc->msgin.copied_out;
@@ -319,7 +323,9 @@ sdtp_add_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_data_header *h
     }
 
     if ((offset < floor) || (offset + data_bytes > ceiling)) {
-        sdtp_free_mbuf(m);
+        // TODO:: free shouldn't be called while holding locks
+        // maybe just save them and free'd them at the end
+        //sdtp_free_mbuf(m);
         return;
     }
 
