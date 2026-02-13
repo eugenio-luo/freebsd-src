@@ -98,12 +98,12 @@ struct sdtp_rpc {
 
     uint32_t flags_atomic;
 
-#define RPC_PKTS_READY        1
-#define RPC_COPYING_FROM_USER 2
-#define RPC_COPYING_TO_USER   4
-#define RPC_HANDING_OFF       8
-#define RPC_DECRYPTING	      16
-#define RPC_ACKING_HOMALS     32
+#define RPC_PKTS_READY        (1 << 0)
+#define RPC_COPYING_FROM_USER (1 << 1)
+#define RPC_COPYING_TO_USER   (1 << 2)
+#define RPC_HANDING_OFF       (1 << 3)
+#define RPC_DECRYPTING	      (1 << 4)
+#define RPC_ACKING_HOMALS     (1 << 5)
 
 #define RPC_CANT_REAP (RPC_COPYING_FROM_USER | RPC_COPYING_TO_USER \
 		| RPC_HANDING_OFF | RPC_DECRYPTING | RPC_ACKING_HOMALS)

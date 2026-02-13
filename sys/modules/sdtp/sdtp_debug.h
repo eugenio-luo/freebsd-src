@@ -43,6 +43,7 @@ sdtp_debug(const char *fmt, ...)
 #endif
 }
 
+/*
 static inline const char *
 rpc_flag_to_string(uint32_t flags)
 {
@@ -56,6 +57,7 @@ rpc_flag_to_string(uint32_t flags)
     default:                    return "UNKNOWN";
     }
 }
+*/
 
 static inline const char *
 header_type_to_string(uint8_t type)
@@ -101,9 +103,10 @@ sdtp_rpc_debug(struct sdtp_rpc *rpc, const char *fmt, ...)
     va_list args;
     int len;
 
-    len = snprintf(buf, sizeof(buf), "RPC %lu [ dport: %d, state: %s, error: %d ]",
+    len = snprintf(buf, sizeof(buf), "RPC %lu [ dport: %d, state: %x, error: %d ]",
            rpc->id, rpc->dport,
-           rpc_flag_to_string(atomic_load_32(&rpc->flags_atomic)),
+           //rpc_flag_to_string(atomic_load_32(&rpc->flags_atomic)),
+           atomic_load_32(&rpc->flags_atomic),
            rpc->error);
 
     va_start(args, fmt);
