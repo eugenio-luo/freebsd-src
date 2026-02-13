@@ -315,13 +315,11 @@ sdtp_send_data(struct sdtp_rpc *rpc, struct mbuf *buf, int priority)
 
     switch (family) {
     case AF_INET: {
-        //struct route ro;
         struct ip *ip_header = mtod(buf, struct ip *);
 
         NET_EPOCH_ENTER(et);
 
         memset(ip_header, 0, sizeof(struct ip));
-        //memset(&ro, 0, sizeof(ro));
 
         ip_header->ip_v = IPVERSION;
         ip_header->ip_hl = sizeof(struct ip) >> 2;
@@ -336,8 +334,9 @@ sdtp_send_data(struct sdtp_rpc *rpc, struct mbuf *buf, int priority)
         ip_header->ip_src = inp->inp_laddr;
         ip_header->ip_sum = in_cksum_hdr(ip_header);
 
-        ip_output(buf, NULL, &inp->inp_route, 0, NULL, inp);
+        int res = ip_output(buf, NULL, &inp->inp_route, 0, NULL, inp);
         NET_EPOCH_EXIT(et);
+        sdtp_rpc_debug(rpc, "ip_output return error: %d", res);
 
         break;
     }
