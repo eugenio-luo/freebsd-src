@@ -209,11 +209,21 @@
         (ELEM)->LINK.owner = NULL; \
     } while (0)
 
+/* Only use this if you own the head of the list */
 #define SDTP_LIST_REMOVE_LOCKED(ELEM, LINK) \
     do { \
         SDTP_LIST_OWNED((ELEM)->LINK.owner); \
         MPASS((ELEM)->LINK.owner != NULL); \
         LIST_REMOVE(ELEM, LINK.entry); \
+        (ELEM)->LINK.owner = NULL; \
+    } while (0)
+
+#define SDTP_LIST_REMOVE_LOCKED_THEN_UNLOCK(ELEM, LINK) \
+    do { \
+        SDTP_LIST_OWNED((ELEM)->LINK.owner); \
+        MPASS((ELEM)->LINK.owner != NULL); \
+        LIST_REMOVE(ELEM, LINK.entry); \
+        SDTP_LIST_UNLOCK((ELEM)->LINK.owner); \
         (ELEM)->LINK.owner = NULL; \
     } while (0)
 
