@@ -125,6 +125,7 @@ sdtp_handoff_rpc(struct sdtp_rpc *rpc)
     return;
 
 sdtp_handoff_rpc_waiting:
+    mtx_lock_spin(&interest->spinlock);
     sdtp_rpc_debug(rpc, "there is a thread waiting");
     atomic_set_32(&rpc->flags_atomic, RPC_HANDING_OFF);
     atomic_store_32(&interest->locked_atomic, 0);
@@ -144,10 +145,10 @@ sdtp_handoff_rpc_waiting:
     }
 
     sdtp_rpc_debug(rpc, "waking up thread: %#x", interest->thread);
-    // KASSERT(TD_IS_SLEEPING(interest->thread), ("interest's thread should be sleeping"));
     INTEREST_NOT_LINKED(interest);
 
     wakeup(&interest->spinlock);
+    mtx_unlock_spin(&interest->spinlock);
 }
 
 struct sdtp_rpc *

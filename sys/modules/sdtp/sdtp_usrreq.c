@@ -299,14 +299,14 @@ sdtp_wait_for_message(struct sdtp_inpcb *pcb, int flags, uint64_t id, struct uio
         sdtp_pcb_debug(pcb, "sleep channel: %#x", &interest.spinlock);
         mtx_assert(&interest.spinlock, MA_NOTOWNED);
 
+        mtx_lock_spin(&interest.spinlock);
         rpc = (struct sdtp_rpc *) atomic_load_acq_ptr(&interest.ready_rpc_atomic);
         if (rpc == NULL && !pcb->shutdown) {
-            mtx_lock_spin(&interest.spinlock);
-            msleep_spin(&interest.spinlock, &interest.spinlock, "sdtp_pool", 0);
-            mtx_unlock_spin(&interest.spinlock);
-
+            int res = msleep_spin(&interest.spinlock, &interest.spinlock, "sdtp_pool", 0);
+            sdtp_pcb_debug(pcb, "sleep result: %d", res);
             INTEREST_NOT_LINKED(&interest);
         }
+        mtx_unlock_spin(&interest.spinlock);
         sdtp_pcb_debug(pcb, "waking up");
 
 sdtp_wait_for_message_found_rpc:
