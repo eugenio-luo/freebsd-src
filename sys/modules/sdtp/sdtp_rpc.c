@@ -157,6 +157,8 @@ sdtp_find_client_rpc(struct sdtp_inpcb *pcb, uint64_t id)
     struct sdtp_rpc *rpc = NULL;
     struct sdtp_rpc_bucket *bucket = sdtp_client_rpc_bucket(pcb, id);
 
+    sdtp_pcb_debug(pcb, "finding client rpc");
+
     SDTP_LIST_LOCK(&bucket->rpcs);
     SDTP_LIST_FOREACH_LOCKED(rpc, &bucket->rpcs, hash_links) {
        if (rpc->id == id) {
@@ -172,6 +174,8 @@ sdtp_find_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, uint16_t p
 {
     struct sdtp_rpc *rpc = NULL;
     struct sdtp_rpc_bucket *bucket = sdtp_server_rpc_bucket(pcb, id);
+
+    sdtp_pcb_debug(pcb, "finding server rpc");
 
     SDTP_LIST_LOCK(&bucket->rpcs);
     SDTP_LIST_FOREACH_LOCKED(rpc, &bucket->rpcs, hash_links) {
@@ -195,12 +199,16 @@ sdtp_new_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, struct sdtp
     struct sdtp_rpc *rpc = sdtp_find_server_rpc(pcb, source, ntohs(header->common.sport_be), id);
 
     if (rpc) {
+        sdtp_pcb_debug(pcb, "no need for new rpc, found old one");
         return rpc;
     }
+
+    sdtp_pcb_debug(pcb, "creating new server rpc");
 
     rpc = SDTP_ZONE_GET(zones.sdtp_zone_rpc, struct sdtp_rpc);
     if (!rpc) {
         *error = ENOMEM;
+        sdtp_pcb_debug(pcb, "not enough memory for new server rpc");
         goto sdtp_new_server_rpc_error;
     }
 
@@ -210,6 +218,7 @@ sdtp_new_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, struct sdtp
     atomic_store_32(&rpc->grants_in_progress_atomic, 0);
     rpc->peer = sdtp_find_peer(&pcb->sdtp->peers, source, &pcb->inp, error);
     if (*error != 0) {
+        sdtp_pcb_debug(pcb, "can't find peer");
         goto sdtp_new_server_rpc_error;
     }
     rpc->dport = ntohs(header->common.sport_be);
@@ -333,6 +342,7 @@ sdtp_add_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_data_header *h
         // TODO:: free shouldn't be called while holding locks
         // maybe just save them and free'd them at the end
         //sdtp_free_mbuf(m);
+        sdtp_rpc_debug(rpc, "drop packet");
         return;
     }
 
@@ -352,7 +362,7 @@ sdtp_add_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_data_header *h
 
     rpc->msgin.bytes_remaining -= data_bytes;
     rpc->msgin.num_bufs++;
-
+    sdtp_rpc_debug(rpc, "new packet added");
 }
 
 /*
@@ -418,6 +428,7 @@ sdtp_data_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_inpcb *pcb)
         // TODO: rpc_handoff = 
     } else {
         rpc_handoff = !(atomic_load_32(&rpc->flags_atomic) & RPC_PKTS_READY);
+        sdtp_rpc_debug(rpc, "should handoff? %d", rpc_handoff);
     }
 
     if (rpc_handoff) {
