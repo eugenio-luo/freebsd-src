@@ -365,13 +365,37 @@ sdtp_add_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_data_header *h
     sdtp_rpc_debug(rpc, "new packet added");
 }
 
+static void
+sdtp_rpc_acked(struct sdtp_inpcb *pcb, struct in6_addr *source_addr, uint16_t source_port, struct sdtp_ack *ack)
+{
+    uint16_t server_port = ntohs(ack->server_port_be);
+    uint64_t id = sdtp_local_id(ack->client_id_be);
+    struct sdtp_inpcb *tmp = pcb;
+    struct sdtp_rpc *rpc;
+
+    if (tmp->port != server_port) {
+        tmp = sdtp_find_inpcb(&pcb->sdtp->port_map, server_port);
+        if (!tmp) {
+            return;
+        }
+    }
+
+    rpc = sdtp_find_server_rpc(tmp, source_addr, source_port, id);
+    if (rpc) {
+        SDTP_QUEUE_LOCK(&pcb->active_rpcs);
+        sdtp_rpc_free(rpc);
+        SDTP_QUEUE_UNLOCK(&pcb->active_rpcs);
+        sdtp_rpc_unlock(rpc);
+    }
+}
+
 /*
  * sdtp_data_packet()
  *
  * rpc need to be locked
  */
 static int 
-sdtp_data_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_inpcb *pcb)
+sdtp_data_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_inpcb *pcb, struct in6_addr *source)
 {
     RPC_LOCK_OWNED(rpc);
 
@@ -388,6 +412,16 @@ sdtp_data_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_inpcb *pcb)
 
     if (ntohl(header->data_segment.offset_be) == -1) {
         header->data_segment.offset_be = header->common.sequence_be;
+    }
+
+    if (header->ack.client_id_be > 0) {
+        sdtp_rpc_unlock(rpc);
+        sdtp_rpc_acked(pcb, source, ntohs(header->common.sport_be), &header->ack);
+        sdtp_rpc_lock(rpc);
+
+        if (rpc->state == SDTP_RPC_DEAD) {
+            goto sdtp_data_packet_error;
+        }
     }
 
     if (rpc->state != SDTP_RPC_INCOMING) {
@@ -636,7 +670,7 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
 
     switch (header->type) {
     case SDTP_DATA: {
-        int incoming_delta = sdtp_data_packet(m, rpc, pcb);
+        int incoming_delta = sdtp_data_packet(m, rpc, pcb, source);
         atomic_add_64(&sdtp->total_incoming_atomic, incoming_delta);
 
         if (pcb->dead_bufs >= 2 * pcb->sdtp->dead_buffs_limit) {
