@@ -455,9 +455,118 @@ sdtp_data_packet_error:
     return incoming_delta;
 }
 
-static void
-sdtp_reap_rpc(struct sdtp_inpcb *pcb, int count)
+int
+sdtp_rpc_reap(struct sdtp_inpcb *pcb, bool reap_all)
 {
+#define BATCH_MAX 10
+    struct sdtp_rpc *rpcs[BATCH_MAX];
+    struct sdtp_packet_slist_entry *out_pkts[BATCH_MAX];
+    struct sdtp_packet_tailq_entry *in_pkts[BATCH_MAX];
+    bool checked_all_rpcs;
+    int bufs_to_reap, batch_size, num_out_pkts, num_in_pkts, num_rpcs;
+    struct sdtp_rpc *rpc, *tmp;
+
+    sdtp_pcb_debug(pcb, "reap dead rpcs");
+
+    bufs_to_reap = pcb->sdtp->reap_limit;
+    checked_all_rpcs = SDTP_QUEUE_EMPTY(&pcb->dead_rpcs);
+    sdtp_pcb_debug(pcb, "empty dead rpcs? %d", checked_all_rpcs);
+    while (!checked_all_rpcs) {
+        batch_size = BATCH_MAX;
+        if (!reap_all) {
+            if (bufs_to_reap <= 0) {
+                sdtp_pcb_debug(pcb, "bufs_to_reap: %d", bufs_to_reap);
+                break;
+            }
+            if (batch_size > bufs_to_reap) {
+                batch_size = bufs_to_reap;
+            }
+            bufs_to_reap -= batch_size;
+        }
+        num_out_pkts = 0;
+        num_in_pkts = 0;
+        num_rpcs = 0;
+
+        sdtp_pcb_debug(pcb, "reap batch size: %d", batch_size);
+
+        mtx_lock_spin(&pcb->spinlock);
+        if (atomic_load_32(&pcb->protect_count_atomic)) {
+            mtx_unlock_spin(&pcb->spinlock);
+            return 0;
+        }
+
+        SDTP_QUEUE_LOCK(&pcb->dead_rpcs);
+        SDTP_QUEUE_FOREACH_SAFE_LOCKED(rpc, &pcb->dead_rpcs, dead_links, tmp) {
+            // TODO: implement refs
+
+            if ((atomic_load_32(&rpc->flags_atomic) & RPC_CANT_REAP)
+                || (atomic_load_32(&rpc->grants_in_progress_atomic) != 0)
+                || (atomic_load_int(&rpc->msgout.active_xmits_atomic) != 0) ) {
+
+                continue;
+            }
+
+            rpc->magic = 0;
+            rpc->state = 0;
+            if (rpc->msgout.length >= 0) {
+                while (!SLIST_EMPTY(&rpc->msgout.packets)) {
+                    out_pkts[num_out_pkts] = SLIST_FIRST(&rpc->msgout.packets);
+                    SLIST_REMOVE_HEAD(&rpc->msgout.packets, link);
+                    ++num_out_pkts;
+                    --rpc->msgout.num_bufs;
+                    if (num_out_pkts >= batch_size) {
+                        goto sdtp_reap_rpc_release;
+                    }
+                }
+            }
+
+            if (rpc->msgin.total_length >= 0) {
+                while (!TAILQ_EMPTY(&rpc->msgin.packets)) {
+                    in_pkts[num_in_pkts] = TAILQ_FIRST(&rpc->msgin.packets);
+                    TAILQ_REMOVE_HEAD(&rpc->msgin.packets, link);
+                    ++num_in_pkts;
+                    --rpc->msgin.num_bufs;
+                    if (num_in_pkts >= batch_size) {
+                        goto sdtp_reap_rpc_release;
+                    }
+                }
+            }
+
+            rpcs[num_rpcs] = rpc;
+            ++num_rpcs;
+            SDTP_QUEUE_REMOVE_LOCKED(&pcb->dead_rpcs, rpc, dead_links);
+            if (num_rpcs >= batch_size) {
+                goto sdtp_reap_rpc_release;
+            }
+        }
+        checked_all_rpcs = true;
+
+sdtp_reap_rpc_release:
+        SDTP_QUEUE_UNLOCK(&pcb->dead_rpcs);
+        pcb->dead_bufs -= num_out_pkts + num_in_pkts;
+        mtx_unlock_spin(&pcb->spinlock);
+
+        sdtp_pcb_debug(pcb, "reap %d out packets", num_out_pkts);
+        for (int i = 0; i < num_out_pkts; ++i) {
+            m_freem(out_pkts[i]->data);
+            SDTP_ZONE_FREE(zones.sdtp_zone_packet_slist_entry, out_pkts[i]);
+        }
+
+        sdtp_pcb_debug(pcb, "reap %d in packets", num_in_pkts);
+        for (int i = 0; i < num_in_pkts; ++i) {
+            m_freem(in_pkts[i]->data);
+            sdtp_free_packet_tailq_entry(in_pkts[i]);
+        }
+
+        sdtp_pcb_debug(pcb, "reap %d rpcs", num_rpcs);
+        for (int i = 0; i < num_rpcs; ++i) {
+            sdtp_rpc_lock(rpcs[i]);
+            sdtp_rpc_unlock(rpcs[i]);
+            SDTP_ZONE_FREE(zones.sdtp_zone_rpc, rpcs[i]);
+        }
+    }
+
+    return !checked_all_rpcs;
 }
 
 /* return either 0 if the buffer is not consumed, otherwise 1 */
@@ -529,6 +638,10 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
     case SDTP_DATA: {
         int incoming_delta = sdtp_data_packet(m, rpc, pcb);
         atomic_add_64(&sdtp->total_incoming_atomic, incoming_delta);
+
+        if (pcb->dead_bufs >= 2 * pcb->sdtp->dead_buffs_limit) {
+            sdtp_rpc_reap(pcb, /* reap_all */ false);
+        }
         break;
     }
 

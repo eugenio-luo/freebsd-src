@@ -202,20 +202,10 @@ sdtp_inpcb_free(struct sdtp_inpcb *pcb)
     SDTP_QUEUE_UNLOCK(&pcb->response_interests);
     mtx_unlock_spin(&pcb->spinlock);
 
+    sdtp_rpc_reap(pcb, /* reap_all */ true);
+
     /*
      TODO:
-	homa_pool_destroy(&hsk->buffer_pool);
-
-	i = 0;
-	while (!list_empty(&hsk->dead_rpcs)) {
-		homa_rpc_reap(hsk, 1000);
-		i++;
-		if (i == 5) {
-			tt_record("Freezing because reap seems hung");
-			tt_freeze();
-		}
-	}
-
 	homals_destroy_ctxs(hsk->homals_ctx_buckets);
     */
 }

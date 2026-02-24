@@ -254,7 +254,7 @@ sdtp_wait_for_message(struct sdtp_inpcb *pcb, int flags, uint64_t id, struct uio
     struct sdtp_rpc *rpc = NULL;
 	struct sdtp_interest interest;
     uint64_t poll_start, now;
-    int blocked;
+    int blocked, more_rpcs_to_reap = true;
 
     flags |= SDTP_RECVMSG_REQUEST;
 
@@ -266,10 +266,14 @@ sdtp_wait_for_message(struct sdtp_inpcb *pcb, int flags, uint64_t id, struct uio
             goto sdtp_wait_for_message_found_rpc;
         }
 
-        /* TODO: clean up dead rpcs
-        while (1) {
+        while (more_rpcs_to_reap) {
+            rpc = (struct sdtp_rpc *) atomic_load_ptr(&interest.ready_rpc_atomic);
+            if (rpc != NULL) {
+                goto sdtp_wait_for_message_found_rpc;
+            }
+
+            more_rpcs_to_reap = sdtp_rpc_reap(pcb, /* reap_all */ false);
         }
-        */
 
         if (flags & SDTP_RECVMSG_NONBLOCKING) {
             *error = EAGAIN;
