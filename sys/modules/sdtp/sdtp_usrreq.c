@@ -206,7 +206,7 @@ sdtp_copy_to_user_copy:
             header = mtod(buf, struct sdtp_data_header *); 
             int rem = buf->m_pkthdr.len - sizeof(struct sdtp_data_header);
 
-            if (rem <= sizeof(*header) || rem > buf->m_pkthdr.len) {
+            if (rem < 0) {
                 error = EINVAL;
                 continue;
             }
