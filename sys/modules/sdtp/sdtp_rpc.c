@@ -477,7 +477,7 @@ sdtp_data_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_inpcb *pcb, s
         // TODO: homa_check_grantable(homa, rpc);
     }
 
-    if (ntohs(header->cutoff_version_be) !=sdtp->cutoff_version) {
+    if (ntohs(header->cutoff_version_be) != sdtp->cutoff_version) {
         (void) rpc;
         //TODO: The sender has out-of-date cutoffs
     }

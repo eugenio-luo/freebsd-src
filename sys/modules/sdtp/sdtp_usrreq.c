@@ -191,6 +191,7 @@ sdtp_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc)
 
 sdtp_copy_to_user_copy:
         if (n == 0) {
+            sdtp_rpc_debug(rpc, "failed to copy any buffers");
             break;
         }
         atomic_set_32(&rpc->flags_atomic, RPC_COPYING_TO_USER);
@@ -304,7 +305,7 @@ sdtp_wait_for_message(struct sdtp_inpcb *pcb, int flags, uint64_t id, struct uio
         mtx_assert(&interest.spinlock, MA_NOTOWNED);
 
         mtx_lock_spin(&interest.spinlock);
-        rpc = (struct sdtp_rpc *) atomic_load_acq_ptr(&interest.ready_rpc_atomic);
+        rpc = (struct sdtp_rpc *) atomic_load_ptr(&interest.ready_rpc_atomic);
         if (rpc == NULL && !pcb->shutdown) {
             int res = msleep_spin(&interest.spinlock, &interest.spinlock, "sdtp_pool", 0);
             sdtp_pcb_debug(pcb, "sleep result: %d", res);
