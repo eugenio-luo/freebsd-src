@@ -111,12 +111,14 @@
     } while (0)
 
 #define SDTP_QUEUE_EMPTY_LOCKED(Q) \
-    do { \
-        SDTP_QUEUE_OWNED(Q); \
-        TAILQ_EMPTY(&((Q)->q)) \
-    } while (0);
+    ({SDTP_QUEUE_OWNED(Q); \
+      TAILQ_EMPTY(&((Q)->q)); })
 
-#define SDTP_QUEUE_EMPTY(Q) TAILQ_EMPTY_ATOMIC(&((Q)->q))
+#define SDTP_QUEUE_EMPTY(Q) \
+    ({SDTP_QUEUE_LOCK(Q); \
+      bool retval = TAILQ_EMPTY(&((Q)->q)); \
+      SDTP_QUEUE_UNLOCK(Q); \
+      retval; })
 
 #define SDTP_QUEUE_FIRST(Q, TYPE) \
     ({SDTP_QUEUE_LOCK(Q); \
@@ -227,7 +229,11 @@
         (ELEM)->LINK.owner = NULL; \
     } while (0)
 
-#define SDTP_LIST_EMPTY(Q) LIST_EMPTY_ATOMIC(&((Q)->q))
+#define SDTP_LIST_EMPTY(Q) \
+    ({SDTP_LIST_LOCK(Q); \
+      bool retval = LIST_EMPTY(&((Q)->q)); \
+      SDTP_LIST_UNLOCK(Q); \
+      retval; })
 
 #define SDTP_LIST_FIRST(Q, TYPE) \
     ({SDTP_LIST_LOCK(Q); \
