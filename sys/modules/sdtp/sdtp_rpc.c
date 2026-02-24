@@ -673,6 +673,7 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
         int incoming_delta = sdtp_data_packet(m, rpc, pcb, source);
         atomic_add_64(&sdtp->total_incoming_atomic, incoming_delta);
 
+        sdtp_rpc_unlock(rpc);
         if (pcb->dead_bufs >= 2 * pcb->sdtp->dead_buffs_limit) {
             sdtp_rpc_reap(pcb, /* reap_all */ false);
         }
@@ -684,6 +685,7 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
 
         cutoffs_header = mtod(m, struct sdtp_cutoffs_header *);
         rpc->peer->cutoff_version_be = cutoffs_header->cutoff_version_be;
+        sdtp_rpc_unlock(rpc);
         break;
     }
 
@@ -694,6 +696,7 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
     case SDTP_FREEZE:
     case SDTP_NEED_ACK:
     case SDTP_ACK:
+        sdtp_rpc_unlock(rpc);
         break;
 
     default:
@@ -701,9 +704,6 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
         __unreachable();
         break;
     }
-
-    // TODO: sdtp_rpc_reap
-    sdtp_rpc_unlock(rpc);
 
     RPC_LOCK_NOTOWNED(rpc);
     return true;
