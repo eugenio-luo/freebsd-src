@@ -648,8 +648,10 @@ sdtp_send_response(struct sdtp_inpcb *pcb,
 
 sdtp_send_response_error:
     if (rpc != NULL) {
-        sdtp_rpc_unlock(rpc);
+        SDTP_QUEUE_LOCK(&pcb->active_rpcs);
         sdtp_rpc_free(rpc);
+        SDTP_QUEUE_UNLOCK(&pcb->active_rpcs);
+        sdtp_rpc_unlock(rpc);
     }
     return error;
 }
