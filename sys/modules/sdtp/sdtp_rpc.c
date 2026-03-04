@@ -749,8 +749,10 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
         struct sdtp_cutoffs_header *cutoffs_header;
 
         cutoffs_header = mtod(m, struct sdtp_cutoffs_header *);
-        rpc->peer->cutoff_version_be = cutoffs_header->cutoff_version_be;
-        sdtp_rpc_unlock(rpc);
+        if (rpc) {
+            rpc->peer->cutoff_version_be = cutoffs_header->cutoff_version_be;
+            sdtp_rpc_unlock(rpc);
+        }
         break;
     }
 
@@ -761,16 +763,19 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
     case SDTP_FREEZE:
     case SDTP_NEED_ACK:
     case SDTP_ACK:
-        sdtp_rpc_unlock(rpc);
+        if (rpc) {
+            sdtp_rpc_unlock(rpc);
+        }
         break;
 
     default:
         KASSERT(0, ("switch statement: header type must be valid (%#x)", header->type));
         __unreachable();
-        break;
     }
 
-    RPC_LOCK_NOTOWNED(rpc);
+    if (rpc) {
+        RPC_LOCK_NOTOWNED(rpc);
+    }
     return true;
 
 sdtp_handle_packet_error:
