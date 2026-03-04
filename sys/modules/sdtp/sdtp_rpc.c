@@ -282,7 +282,7 @@ sdtp_new_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, struct sdtp
     atomic_store_32(&rpc->grants_in_progress_atomic, 0);
     rpc->peer = sdtp_find_peer(&pcb->sdtp->peers, source, &pcb->inp, error);
     if (*error != 0) {
-        sdtp_pcb_debug(pcb, "can't find peer");
+        sdtp_pcb_debug(pcb, "new server rpc can't find peer");
         goto sdtp_new_server_rpc_error;
     }
     rpc->dport = ntohs(header->common.sport_be);
@@ -335,6 +335,7 @@ sdtp_new_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, struct sdtp
     return rpc;
 
 sdtp_new_server_rpc_error:
+    // TODO: free peer
     if (rpc) {
         SDTP_ZONE_FREE(zones.sdtp_zone_rpc, rpc);
     }

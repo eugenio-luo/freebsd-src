@@ -83,6 +83,7 @@ sdtp_resolve_nh(struct in6_addr *addr, int *error)
     return nh;
 }
 
+// TODO: Implement free peer, we need to reference count
 struct sdtp_peer *
 sdtp_find_peer(struct sdtp_peermap *peermap, struct in6_addr *addr, struct inpcb *pcb, int *error)
 {

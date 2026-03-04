@@ -478,6 +478,7 @@ sdtp_message_out(struct sdtp_rpc *rpc, struct uio *uio, bool immediate_send)
 
     if (rpc->msgout.length > SDTP_MAX_MESSAGE_LENGTH || rpc->msgout.length == 0) {
         error = EINVAL;
+        sdtp_rpc_debug(rpc, "message length invalid");
         goto sdtp_message_out_error;
     }
 
