@@ -586,6 +586,66 @@ sdtp_read_control_buf(struct mbuf *buf)
 }
 
 static int
+sdtp_send_request(struct sdtp_inpcb *pcb,
+                  struct uio *uio,
+                  struct sockaddr *sockaddr,
+                  struct sdtp_sendmsg_args *args)
+{
+    int error = 0;
+    struct sdtp_rpc *rpc = NULL;
+    struct in6_addr addr;
+    uint16_t port;
+
+    switch (sockaddr->sa_family) {
+    case AF_INET: {
+        struct sockaddr_in *sin = (struct sockaddr_in *)sockaddr;
+        ipv4_to_ipv6(&sin->sin_addr, &addr);
+        port = ntohs(sin->sin_port);
+        break;
+    }
+    case AF_INET6: {
+        struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)sockaddr;
+        addr = sin6->sin6_addr;
+        port = ntohs(sin6->sin6_port);
+        break;
+    }
+    default: {
+		error = EAFNOSUPPORT;
+        goto sdtp_send_request_error;
+    }
+    }
+
+    rpc = sdtp_new_client_rpc(pcb, &addr, port, &error);
+    if (rpc == NULL || error != 0) {
+        goto sdtp_send_request_error;
+    }
+
+    // TODO: args flags & HOMA_SENDMSG_PRIVATE
+
+    rpc->completion_cookie = args->completion_cookie;
+    error = sdtp_message_out(rpc, uio, true);
+    if (error != 0) {
+        goto sdtp_send_request_error;
+    }
+    args->id = rpc->id;
+    sdtp_rpc_unlock(rpc);
+    rpc = NULL;
+
+    // copy msg control to user
+
+    return 0;
+
+sdtp_send_request_error:
+    if (rpc != NULL) {
+        SDTP_QUEUE_LOCK(&pcb->active_rpcs);
+        sdtp_rpc_free(rpc);
+        SDTP_QUEUE_UNLOCK(&pcb->active_rpcs);
+        sdtp_rpc_unlock(rpc);
+    }
+    return error;
+}
+
+static int
 sdtp_send_response(struct sdtp_inpcb *pcb,
                    struct uio *uio,
                    struct sockaddr *sockaddr,
@@ -700,7 +760,7 @@ sdtp_sosend(struct socket *so, struct sockaddr *addr, struct uio *uio, struct mb
     }
 
     if (args->id == 0) {
-        //error = sdtp_send_request();
+        error = sdtp_send_request(pcb, uio, addr, args);
     } else {
         error = sdtp_send_response(pcb, uio, addr, args);
     }
