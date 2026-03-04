@@ -165,11 +165,10 @@ sdtp_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc)
         KASSERT(buf->m_pkthdr.len >= sizeof(struct sdtp_data_header),
                 ("buf %d (size: %d) must contain within its mbuf chain the size of sdtp_data_header\n",
                 n, buf->m_pkthdr.len));
+        KASSERT(buf->m_len >= sizeof(struct sdtp_data_header),
+                ("buf %d (size: %d) must be the size of sdtp_data_header\n",
+                n, buf->m_len));
 
-        buf = m_pullup(buf, sizeof(struct sdtp_data_header));
-        if (!buf) {
-            goto sdtp_copy_to_user_copy;
-        }
         header = mtod(buf, struct sdtp_data_header *);
         segment_offset = ntohl(header->data_segment.offset_be);
 
