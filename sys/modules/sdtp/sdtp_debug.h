@@ -158,9 +158,9 @@ sdtp_header_debug(struct sdtp_common_header *header, const char *fmt, ...)
     va_list args;
     int len;
 
-    len = snprintf(buf, sizeof(buf), "PKT [sport: %d, dport: %d, type: %s]",
+    len = snprintf(buf, sizeof(buf), "PKT [sport: %d, dport: %d, type: %s (%x)]",
                ntohs(header->sport_be), ntohs(header->dport_be),
-               header_type_to_string(header->type));
+               header_type_to_string(header->type), header->type);
 
     va_start(args, fmt);
     sdtp_opt_fmt_print(&buf[0], len, fmt, args);
