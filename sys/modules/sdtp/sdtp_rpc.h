@@ -167,6 +167,7 @@ remove_ready_rpc(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc)
     atomic_store_int(&rpc->is_ready_atomic, false);
 }
 
+struct sdtp_rpc *sdtp_new_client_rpc(struct sdtp_inpcb *pcb, struct in6_addr *dest, uint16_t port, int *error);
 struct sdtp_rpc *sdtp_find_client_rpc(struct sdtp_inpcb *pcb, uint64_t id);
 struct sdtp_rpc *sdtp_find_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, uint16_t port, uint64_t id);
 bool sdtp_is_client(uint64_t id);

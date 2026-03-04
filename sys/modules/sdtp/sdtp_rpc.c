@@ -190,6 +190,70 @@ sdtp_find_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, uint16_t p
     return NULL;
 }
 
+struct sdtp_rpc *
+sdtp_new_client_rpc(struct sdtp_inpcb *pcb, struct in6_addr *dest, uint16_t port, int *error)
+{
+    struct sdtp_rpc_bucket *bucket;
+    struct sdtp_rpc *rpc;
+    *error = 0;
+
+    sdtp_pcb_debug(pcb, "creating new client rpc");
+    rpc = SDTP_ZONE_GET(zones.sdtp_zone_rpc, struct sdtp_rpc);
+    if (!rpc) {
+        *error = ENOMEM;
+        sdtp_pcb_debug(pcb, "not enough memory for new client rpc");
+        goto sdtp_new_client_rpc_error;
+    }
+
+    rpc->sdtpcb = pcb;
+    rpc->id = atomic_fetchadd_64(&pcb->sdtp->next_out_id_atomic, 2);
+    rpc->state = SDTP_RPC_OUTGOING;
+
+    bucket = sdtp_client_rpc_bucket(pcb, rpc->id);
+    rpc->peer = sdtp_find_peer(&pcb->sdtp->peers, dest, &pcb->inp, error);
+    if (*error != 0) {
+        sdtp_pcb_debug(pcb, "new client rpc can't find peer");
+        goto sdtp_new_client_rpc_error;
+    }
+    rpc->dport = port;
+    rpc->msgin.total_length = -1;
+    rpc->msgout.length = -1;
+    SDTP_LIST_ENTRY_INIT(&rpc->hash_links);
+    atomic_store_int(&rpc->is_ready_atomic, false);
+    SDTP_LIST_ENTRY_INIT(&rpc->ready_links);
+    SDTP_QUEUE_ENTRY_INIT(&rpc->active_links);
+    SDTP_QUEUE_ENTRY_INIT(&rpc->dead_links);
+    TAILQ_INIT(&rpc->grantable_links);
+    TAILQ_INIT(&rpc->throttled_links);
+	rpc->resend_timer_ticks = pcb->sdtp->timer_ticks;
+	rpc->magic = SDTP_RPC_MAGIC;
+	rpc->start_cycles = get_cyclecount();
+
+    mtx_lock_spin(&pcb->spinlock);
+    if (pcb->shutdown) {
+        mtx_unlock_spin(&pcb->spinlock);
+        *error = ESHUTDOWN;
+        goto sdtp_new_client_rpc_error;
+    }
+
+    SDTP_QUEUE_LOCK(&pcb->active_rpcs);
+    SDTP_LIST_LOCK(&bucket->rpcs);
+    rpc->spinlock_p = &bucket->rpcs.spinlock;
+    SDTP_LIST_INSERT_HEAD_LOCKED(&bucket->rpcs, rpc, hash_links);
+    SDTP_QUEUE_INSERT_TAIL_LOCKED(&pcb->active_rpcs, rpc, active_links);
+    SDTP_QUEUE_UNLOCK(&pcb->active_rpcs);
+    mtx_unlock_spin(&pcb->spinlock);
+
+    return rpc;
+
+sdtp_new_client_rpc_error:
+    // TODO: free peer
+    if (rpc) {
+        SDTP_ZONE_FREE(zones.sdtp_zone_rpc, rpc);
+    }
+    return NULL;
+}
+
 static struct sdtp_rpc *
 sdtp_new_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, struct sdtp_data_header *header, int *error)
 {
