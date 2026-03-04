@@ -479,12 +479,16 @@ sdtp_soreceive_done:
     if (rpc) {
         if (sdtp_is_client(rpc->id)) {
             sdtp_peer_ack(rpc);
+            SDTP_QUEUE_LOCK(&rpc->sdtpcb->active_rpcs);
             sdtp_rpc_free(rpc);
+            SDTP_QUEUE_UNLOCK(&rpc->sdtpcb->active_rpcs);
         } else {
             if (res >= 0) {
                 rpc->state = SDTP_RPC_IN_SERVICE;
             } else {
+                SDTP_QUEUE_LOCK(&rpc->sdtpcb->active_rpcs);
                 sdtp_rpc_free(rpc);
+                SDTP_QUEUE_UNLOCK(&rpc->sdtpcb->active_rpcs);
             }
         }
         sdtp_rpc_unlock(rpc);
