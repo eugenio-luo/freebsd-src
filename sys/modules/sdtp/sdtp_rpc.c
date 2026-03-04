@@ -629,6 +629,7 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
         goto sdtp_handle_packet_error;
     }
 
+    header = mtod(m, struct sdtp_common_header *);
     sdtp_header_debug(header, "id: %x, is_client: %d", id, sdtp_is_client(id));
 
     if (!sdtp_is_client(id)) {
