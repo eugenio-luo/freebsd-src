@@ -42,29 +42,68 @@
 
 extern struct sdtp_zones zones;
 
-// TODO: fix this
 static int
 sdtp_send_control_buf(struct sdtp_inpcb *pcb, struct sdtp_peer *peer, void *data, size_t len)
 {
+    VALID_PCB_ASSERT(pcb);
+    VALID_PEER_ASSERT(peer);
+
+    KASSERT(data != NULL, ("data must be valid"));
+    KASSERT(len != 0, ("len must be positive"));
+
     struct mbuf *m;
-    int error = 0, family = pcb->socket->so_proto->pr_domain->dom_family;
-    size_t iplen = (family == AF_INET) ? sizeof(struct ip) : sizeof(struct ip6_hdr);
-    size_t payload_len = max(len, SDTP_MIN_PKT_LENGTH);
-    size_t extra_len = max(SDTP_MIN_PKT_LENGTH - len, 0);
+    struct inpcb *inp = &pcb->inp;
+    struct epoch_tracker et;
+    int error, family = pcb->socket->so_proto->pr_domain->dom_family;
+    size_t iphlen = pcb->ip_header_length;
 
-    KASSERT(len + iplen + max_linkhdr < MHLEN,
-            ("header size (%lu) + iplen (%lu) and linklen (%u) should be less than mbuf header buffer size (%d)",
-             len, iplen, max_linkhdr, MHLEN));
-
-    MGETHDR(m, M_NOWAIT, MT_HEADER);
+    m = m_gethdr(M_NOWAIT, MT_DATA);
     if (!m) {
         error = ENOBUFS;
         goto sdtp_send_control_buf_error;
     }
+    memset(mtod(m, char *), 0, MHLEN);
+    memcpy(mtod(m, char *) + iphlen, data, len);
 
-    sdtp_debug("m->m_pkthdr size: %d\n", m->m_pkthdr.len);
-    sdtp_debug("payload_len: %lu\n", payload_len);
-    sdtp_debug("extra_len: %lu\n", extra_len);
+    m->m_pkthdr.len = iphlen + len;
+    m->m_len = iphlen + len;
+
+    switch (family) {
+    case AF_INET: {
+        struct ip *ip_header = mtod(m, struct ip *);
+
+        NET_EPOCH_ENTER(et);
+
+        memset(ip_header, 0, sizeof(struct ip));
+
+        ip_header->ip_v = IPVERSION;
+        ip_header->ip_hl = sizeof(struct ip) >> 2;
+        ip_header->ip_off = htons(IP_DF);
+        ip_header->ip_tos = inp->inp_ip_tos;
+        ip_header->ip_len = htons(m->m_pkthdr.len);
+        ip_header->ip_ttl = 64;
+        ip_header->ip_p = IPPROTO_SDTP;
+        ipv6_to_ipv4(&peer->addr, &ip_header->ip_dst);
+        ip_header->ip_src = inp->inp_laddr;
+        ip_header->ip_sum = in_cksum_hdr(ip_header);
+
+        error = ip_output(m, NULL, &inp->inp_route, 0, NULL, inp);
+        NET_EPOCH_EXIT(et);
+        sdtp_pcb_debug(pcb, "ip_output return error: %d", error);
+
+        break;
+    }
+    case AF_INET6: {
+        KASSERT(0, ("not implemented yet"));
+        break;
+    }
+    default: {
+        KASSERT(0, ("unreachable"));
+        __unreachable();
+    }
+    }
+
+    return error;
 
 sdtp_send_control_buf_error:
     if (m) {
