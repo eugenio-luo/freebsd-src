@@ -256,8 +256,6 @@ sdtp_wait_for_message(struct sdtp_inpcb *pcb, int flags, uint64_t id, struct uio
     uint64_t poll_start, now;
     int blocked, more_rpcs_to_reap = true;
 
-    flags |= SDTP_RECVMSG_REQUEST;
-
     while (1) {
         sdtp_pcb_debug(pcb, "check if there is waiting interest");
         *error = sdtp_register_interest(&interest, pcb, flags, id);
@@ -450,7 +448,7 @@ sdtp_soreceive(struct socket *so,
 
     // TODO: we don't use sdtp_pool_release_bpages?
 
-    rpc = sdtp_wait_for_message(inp, 0, 0, uio, &res);
+    rpc = sdtp_wait_for_message(inp, (flagsp != NULL) ? *flagsp : 0 , 0, uio, &res);
     if (res) {
         goto sdtp_soreceive_done;
     }
