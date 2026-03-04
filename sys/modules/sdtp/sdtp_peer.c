@@ -38,6 +38,32 @@ sdtp_peer_unlock(struct sdtp_peer *peer)
     sdtp_peer_debug(peer, "unlocked by %#lx", (uintptr_t)curthread);
 }
 
+void
+sdtp_peer_ack(struct sdtp_rpc *rpc)
+{
+    struct sdtp_peer *peer = rpc->peer;
+    struct sdtp_ack_header ack_header;
+
+    sdtp_peer_lock(peer);
+    if (peer->num_acks < NUM_PEER_UNACKED_IDS) {
+        peer->acks[peer->num_acks].client_id_be = htobe64(rpc->id);
+        peer->acks[peer->num_acks].server_port_be = htons(rpc->dport);
+        ++peer->num_acks;
+        sdtp_peer_unlock(peer);
+        return;
+    }
+
+    memcpy(ack_header.acks, peer->acks, sizeof(peer->acks));
+    ack_header.num_acks_be = htons(peer->num_acks);
+    peer->num_acks = 0;
+    sdtp_peer_unlock(peer);
+
+    // TODO: can I really drop this lock? It is a bit dangerous
+    sdtp_rpc_unlock(rpc);
+    sdtp_send_control(rpc, SDTP_ACK, &ack_header, sizeof(ack_header));
+    sdtp_rpc_lock(rpc);
+}
+
 static struct nhop_object *
 sdtp_resolve_nh(struct in6_addr *addr, int *error)
 {
