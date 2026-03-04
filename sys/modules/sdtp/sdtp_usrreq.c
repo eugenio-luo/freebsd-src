@@ -477,6 +477,8 @@ sdtp_soreceive(struct socket *so,
 
 sdtp_soreceive_done:
     if (rpc) {
+        rpc->msgin.num_bufs = 0;
+
         if (sdtp_is_client(rpc->id)) {
             sdtp_peer_ack(rpc);
             SDTP_QUEUE_LOCK(&rpc->sdtpcb->active_rpcs);
@@ -492,8 +494,6 @@ sdtp_soreceive_done:
             }
         }
         sdtp_rpc_unlock(rpc);
-
-        rpc->msgin.num_bufs = 0;
     }
     if (control_buf != NULL && res != 0) {
         m_freem(control_buf);
