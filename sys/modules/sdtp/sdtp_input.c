@@ -111,8 +111,8 @@ sdtp_input_done:
         mtx_assert(&pcb->sdtp->peers.write_spinlock, MA_NOTOWNED);
     }
 
-    if (is_buffer_consumed) {
-        *mp = NULL;
+    if (m && !is_buffer_consumed) {
+        m_freem(m);
     }
     return IPPROTO_DONE;
 }

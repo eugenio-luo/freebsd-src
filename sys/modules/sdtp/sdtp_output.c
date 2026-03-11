@@ -326,6 +326,7 @@ sdtp_fill_packets_slist(struct sdtp_rpc *rpc, struct uio *uio, int max_packet_si
     return 0;
 
 sdtp_fill_packets_slist_error:
+    // TODO: we should free packets here
     sdtp_rpc_lock(rpc);
     return error;
 }
@@ -473,6 +474,8 @@ sdtp_message_out(struct sdtp_rpc *rpc, struct uio *uio, bool immediate_send)
     int max_packet_size, error = 0;
     //, overlap_xmit;
     uint16_t mtu;
+
+    sdtp_debug_print_pcb_rpcs(rpc->sdtpcb, rpc);
 
     sdtp_msgout_init(rpc, uio);
 

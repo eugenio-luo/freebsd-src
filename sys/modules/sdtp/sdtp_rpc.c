@@ -406,7 +406,7 @@ sdtp_add_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_data_header *h
     if ((offset < floor) || (offset + data_bytes > ceiling)) {
         // TODO:: free shouldn't be called while holding locks
         // maybe just save them and free'd them at the end
-        //sdtp_free_mbuf(m);
+        sdtp_free_mbuf(m);
         sdtp_rpc_debug(rpc, "drop packet");
         return;
     }
@@ -516,6 +516,7 @@ sdtp_data_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_inpcb *pcb, s
     if (rpc->ctx) {
         // TODO: sdtp_add_packet()
         (void) rpc->ctx;
+        goto sdtp_data_packet_error;
     } else {
         (void) rpc->ctx;
         sdtp_add_packet(m, rpc, header);
@@ -524,6 +525,7 @@ sdtp_data_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_inpcb *pcb, s
 
     if (rpc->ctx) {
         (void) rpc->ctx;
+        goto sdtp_data_packet_error;
         // TODO: rpc_handoff = 
     } else {
         rpc_handoff = !(atomic_load_32(&rpc->flags_atomic) & RPC_PKTS_READY);
@@ -684,7 +686,7 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
     KASSERT(header->type >= SDTP_DATA && header->type <= SDTP_ACK, ("header type must be valid (%#x)", header->type));
     KASSERT(m->m_pkthdr.len >= sdtp_header_lengths[header->type - SDTP_DATA], ("mbuf must be at least the size of its type header"));
 
-    int error = 0;
+    int error = 0, buf_consumed = 0;
     uint64_t id = sdtp_local_id(header->sender_id_be);
     struct sdtp *sdtp = pcb->sdtp;
     struct sdtp_rpc *rpc;
@@ -743,6 +745,7 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
         if (pcb->dead_bufs >= 2 * pcb->sdtp->dead_buffs_limit) {
             sdtp_rpc_reap(pcb, /* reap_all */ false);
         }
+        buf_consumed = true;
         break;
     }
 
@@ -754,6 +757,7 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
             rpc->peer->cutoff_version_be = cutoffs_header->cutoff_version_be;
             sdtp_rpc_unlock(rpc);
         }
+        buf_consumed = false;
         break;
     }
 
@@ -767,6 +771,7 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
         if (rpc) {
             sdtp_rpc_unlock(rpc);
         }
+        buf_consumed = false;
         break;
 
     default:
@@ -777,7 +782,7 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
     if (rpc) {
         RPC_LOCK_NOTOWNED(rpc);
     }
-    return true;
+    return buf_consumed;
 
 sdtp_handle_packet_error:
     return false;
