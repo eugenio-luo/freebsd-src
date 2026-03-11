@@ -235,4 +235,34 @@ sdtp_data_header_debug(struct sdtp_data_header *header, const char *fmt, ...)
             ("interest " #INTEREST " should not be on any list")); \
     } while (0)
 
+static inline void
+sdtp_debug_print_bucket_rpcs(struct sdtp_rpc_bucket *buckets, size_t size, struct sdtp_rpc *owned_rpc)
+{
+#ifdef SDTP_DEBUG
+    for (int i = 0; i < size; ++i) {
+        struct sdtp_rpc *rpc;
+        struct sdtp_rpc_mlist *rpcs = &buckets[i].rpcs;
+
+        if (owned_rpc && owned_rpc->spinlock_p != &rpcs->spinlock) {
+            SDTP_LIST_LOCK(rpcs);
+        }
+        SDTP_LIST_FOREACH_LOCKED(rpc, rpcs, hash_links) {
+            sdtp_rpc_debug(rpc, "message in num bufs: %d, message out num bufs: %d", rpc->msgin.num_bufs, rpc->msgout.num_bufs);
+        }
+        if (owned_rpc && owned_rpc->spinlock_p != &rpcs->spinlock) {
+            SDTP_LIST_UNLOCK(rpcs);
+        }
+    }
+#endif
+}
+
+static inline void
+sdtp_debug_print_pcb_rpcs(struct sdtp_inpcb *pcb, struct sdtp_rpc *owned_rpc)
+{
+#ifdef SDTP_DEBUG
+    sdtp_debug_print_bucket_rpcs(pcb->client_rpc_buckets, SDTP_CLIENT_RPC_BUCKETS, owned_rpc);
+    sdtp_debug_print_bucket_rpcs(pcb->server_rpc_buckets, SDTP_SERVER_RPC_BUCKETS, owned_rpc);
+#endif
+}
+
 #endif
