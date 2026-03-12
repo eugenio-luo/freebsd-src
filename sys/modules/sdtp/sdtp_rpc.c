@@ -670,12 +670,12 @@ sdtp_reap_rpc_release:
     return !checked_all_rpcs;
 }
 
-/* return either 0 if the buffer is not consumed, otherwise 1 */
-bool
+void
 sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *pcb)
 {
     // TODO: For now without sdtp_lock_cache, I lock the rpc lock
 
+    KASSERT(m != NULL, ("m must be valid"));
     MBUF_LEN_ASSERT(m, struct sdtp_common_header);
     KASSERT(m->m_flags & M_PKTHDR, ("mbuf must be a header mbuf"));
     VALID_PCB_ASSERT(pcb);
@@ -745,7 +745,6 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
         if (pcb->dead_bufs >= 2 * pcb->sdtp->dead_buffs_limit) {
             sdtp_rpc_reap(pcb, /* reap_all */ false);
         }
-        buf_consumed = true;
         break;
     }
 
@@ -757,7 +756,7 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
             rpc->peer->cutoff_version_be = cutoffs_header->cutoff_version_be;
             sdtp_rpc_unlock(rpc);
         }
-        buf_consumed = false;
+        sdtp_free_mbuf(m);
         break;
     }
 
@@ -771,7 +770,7 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
         if (rpc) {
             sdtp_rpc_unlock(rpc);
         }
-        buf_consumed = false;
+        sdtp_free_mbuf(m);
         break;
 
     default:
@@ -782,10 +781,10 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
     if (rpc) {
         RPC_LOCK_NOTOWNED(rpc);
     }
-    return buf_consumed;
+    return;
 
 sdtp_handle_packet_error:
-    return false;
+    sdtp_free_mbuf(m);
 }
 
 void
