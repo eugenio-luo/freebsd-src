@@ -71,29 +71,18 @@ check_pcb_locks(struct sdtp_inpcb *pcb)
     mtx_assert(&pcb->sdtp->peers.write_spinlock, MA_NOTOWNED);
 }
 
-/* TODO: I don't really like that pullup is called here, it's not very clear from the function name */
-SDTP_STATIC bool
-sdtp_parse_header_and_src_addr(struct mbuf **m, int iphlen, struct sdtp_common_header **sdtp_header, struct in6_addr *addr)
+SDTP_STATIC void
+sdtp_parse_header_and_src_addr(struct mbuf *m, int iphlen, struct sdtp_common_header **sdtp_header, struct in6_addr *addr)
 {
-    KASSERT(*m != NULL, ("m must be valid"));
+    KASSERT(m != NULL, ("m must be valid"));
     KASSERT(sdtp_header != NULL, ("sdtp_header must be valid"));
     KASSERT(addr != NULL, ("addr must be valid"));
     KASSERT(iphlen > 0, ("iphlen must be positive"));
 
-    int offset;
-    struct ip *ip_header;
+    struct ip *ip_header = mtod(m, struct ip *);
 
-    offset = iphlen + sizeof(struct sdtp_common_header);
-    *m = m_pullup(*m, offset);
-    if (*m == NULL) {
-        return false;
-    }
-
-    ip_header = mtod(*m, struct ip *);
     *sdtp_header = (struct sdtp_common_header *)((caddr_t)ip_header + iphlen);
     *addr = ipv4_to_ipv6(&ip_header->ip_src);
-
-    return true;
 }
 
 SDTP_STATIC struct mbuf *
@@ -115,9 +104,12 @@ sdtp_input(struct mbuf **mp, int *offp, int proto)
     struct sdtp_inpcb *pcb = NULL;
     struct mbuf *m = *mp;
 
-    if (!sdtp_parse_header_and_src_addr(&m, *offp, &header, &src_addr)) {
+    /* We want to access at least the common header */
+    if ((m = m_pullup(m, *offp + sizeof(struct sdtp_common_header))) == NULL) {
         goto sdtp_input_done;
     }
+
+    sdtp_parse_header_and_src_addr(m, *offp, &header, &src_addr);
 
     if (!sdtp_check_header_conditions(header, m)) {
         m_freem(m);
