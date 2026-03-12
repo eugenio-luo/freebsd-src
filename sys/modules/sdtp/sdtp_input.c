@@ -57,7 +57,7 @@ sdtp_get_pcb(const struct sdtp_common_header * const header)
     if (pcb) {
         VALID_PCB_ASSERT(pcb);
     }
-    return (pcb->socket != NULL) ? pcb : NULL;
+    return (pcb != NULL && pcb->socket != NULL) ? pcb : NULL;
 }
 
 int
