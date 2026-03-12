@@ -21,42 +21,43 @@
 
 extern struct sdtp *sdtp;
 
-static struct sdtp_inpcb *
-check_headers(struct mbuf *m, int iphlen, bool *should_send_icmp)
+static bool
+sdtp_check_conditions(const struct sdtp_common_header * const header, const struct mbuf * const m)
 {
-    KASSERT(iphlen > 0, ("IP header length must be positive"));
+    KASSERT(header != NULL, ("header must be valid"));
     KASSERT(m != NULL, ("m must be valid"));
-    MBUF_LEN_AT_LEAST(m, iphlen + sizeof(struct sdtp_common_header));
-    KASSERT(*should_send_icmp == false, ("should_send_icmp must be false"));
+    MBUF_LEN_ASSERT(m, struct sdtp_common_header);
 
-    struct ip *ip_header;
-    struct sdtp_common_header *sdtp_header;
-    struct sdtp_inpcb *pcb;
+    if (header->type < SDTP_DATA || header->type > SDTP_ACK) {
+        return false;
+    }
+
+    if (m->m_pkthdr.len < sdtp_header_lengths[header->type - SDTP_DATA]) {
+        return false;
+    }
+
+    return true;
+}
+
+static struct sdtp_inpcb *
+sdtp_get_pcb(const struct sdtp_common_header * const header)
+{
+    KASSERT(header != NULL, ("header must be valid"));
+    KASSERT(sdtp != NULL, ("sdtp struct must be valid"));
+
     uint16_t dport;
+    struct sdtp_inpcb *pcb;
 
-    ip_header = mtod(m, struct ip *);
-    sdtp_header = (struct sdtp_common_header *)((caddr_t)ip_header + iphlen);
-
-    if (sdtp_header->type < SDTP_DATA || sdtp_header->type > SDTP_ACK) {
-        return NULL;
-    }
-
-    if (m->m_pkthdr.len < sdtp_header_lengths[sdtp_header->type - SDTP_DATA]) {
-        return NULL;
-    }
-
-    // TODO: Implement FREEZE packet here?
-
-    dport = ntohs(sdtp_header->dport_be);
+    dport = ntohs(header->dport_be);
 
     mtx_lock_spin(&sdtp->port_map.write_spinlock);
     pcb = sdtp_find_inpcb(&sdtp->port_map, dport);
     mtx_unlock_spin(&sdtp->port_map.write_spinlock);
 
-    if (pcb == NULL || pcb->socket == NULL) {
-        *should_send_icmp = true;
+    if (pcb) {
+        VALID_PCB_ASSERT(pcb);
     }
-    return pcb;
+    return (pcb->socket != NULL) ? pcb : NULL;
 }
 
 int
@@ -65,9 +66,9 @@ sdtp_input(struct mbuf **mp, int *offp, int proto)
     struct sdtp_inpcb *pcb = NULL;
     struct mbuf *m;
     struct ip *ip_header;
+    struct sdtp_common_header *sdtp_header;
     struct in6_addr addr;
     int offset, iphlen;
-    bool is_buffer_consumed = false, should_send_icmp = false;
 
     m = *mp;
     iphlen = *offp;
@@ -79,40 +80,39 @@ sdtp_input(struct mbuf **mp, int *offp, int proto)
     }
 
     ip_header = mtod(m, struct ip *);
-
-    pcb = check_headers(m, iphlen, &should_send_icmp);
-    if (pcb == NULL) {
-        if (should_send_icmp) {
-            KASSERT(ip_header->ip_v == IPVERSION, ("ip version must be IP_VERSION"));
-            icmp_error(m, ICMP_UNREACH, ICMP_UNREACH_PORT, 0, 0);
-            is_buffer_consumed = true;
-        }
-
-        goto sdtp_input_done;
-    }
-
+    sdtp_header = (struct sdtp_common_header *)((caddr_t)ip_header + iphlen);
     ipv4_to_ipv6(&ip_header->ip_src, &addr);
 
-    /* Adjust the buffer so we don't have the ip header */
-    m_adj(m, iphlen);
-    m = m_pullup(m, sizeof(struct sdtp_common_header));
-    if (!m) {
+    if (!sdtp_check_conditions(sdtp_header, m)) {
         goto sdtp_input_done;
     }
 
-    is_buffer_consumed = sdtp_handle_packet(m, &addr, pcb);
+    pcb = sdtp_get_pcb(sdtp_header);
+    if (pcb == NULL) {
+        icmp_error(m, ICMP_UNREACH, ICMP_UNREACH_PORT, 0, 0);
+        goto sdtp_input_consumed;
+    }
+
+    m_adj(m, iphlen);
+    m = m_pullup(m, sizeof(struct sdtp_common_header));
+    if (m == NULL) {
+        goto sdtp_input_consumed;
+    }
+
+    if (sdtp_handle_packet(m, &addr, pcb)) {
+        goto sdtp_input_consumed;
+    }
 
 sdtp_input_done:
+    m_freem(m);
+
+sdtp_input_consumed:
     // TODO: add sdtp_send_grants(sdtp);
 
     if (pcb) {
         mtx_assert(&pcb->spinlock, MA_NOTOWNED);
         mtx_assert(&pcb->sdtp->port_map.write_spinlock, MA_NOTOWNED);
         mtx_assert(&pcb->sdtp->peers.write_spinlock, MA_NOTOWNED);
-    }
-
-    if (m && !is_buffer_consumed) {
-        m_freem(m);
     }
     return IPPROTO_DONE;
 }
