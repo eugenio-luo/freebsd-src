@@ -13,6 +13,7 @@
 #include "sdtp_structs.h"
 #include "sdtp_peer.h"
 #include "sdtp_debug.h"
+#include "sdtp_test.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -674,11 +675,69 @@ sdtp_reap_rpc_release:
     return !checked_all_rpcs;
 }
 
+SDTP_STATIC struct sdtp_expected_rpc_ptr
+sdtp_get_rpc(struct mbuf *m, struct sdtp_inpcb *pcb, struct sdtp_common_header *header, struct in6_addr *source)
+{
+    KASSERT(m != NULL, ("m must be valid"));
+    MBUF_LEN_ASSERT(m, struct sdtp_common_header);
+    VALID_PCB_ASSERT(pcb);
+    KASSERT(header != NULL, ("header must be valid"));
+    KASSERT(source != NULL, ("source must be valid"));
+
+    int error = 0;
+    uint64_t id = sdtp_local_id(header->sender_id_be);
+    struct sdtp_rpc *rpc;
+
+    sdtp_header_debug(header, "id: %x, is_client: %d", id, sdtp_is_client(id));
+
+    if (sdtp_is_client(id)) {
+        /* We are the RPC client */
+        rpc = sdtp_find_client_rpc(pcb, id);
+
+    } else if (header->type == SDTP_DATA) {
+        /* We are the RPC server and it's a DATA packet */
+        rpc = sdtp_new_server_rpc(pcb, source, mtod(m, struct sdtp_data_header *), &error);
+        if (error != 0) {
+            return SDTP_UNEXPECTED(struct sdtp_expected_rpc_ptr, error);
+        }
+
+    } else {
+        /* We are the RPC server */
+        rpc = sdtp_find_server_rpc(pcb, source, ntohs(header->sport_be), id);
+    }
+
+    VALID_RPC_ASSERT(rpc);
+    RPC_LOCK_OWNED(rpc);
+    return SDTP_EXPECTED(struct sdtp_expected_rpc_ptr, rpc);
+}
+
+SDTP_STATIC bool
+sdtp_preprocess_rpc(struct sdtp_rpc *rpc, struct sdtp_common_header *header)
+{
+    KASSERT(header != NULL, ("header must be valid"));
+
+    if (rpc) {
+        VALID_RPC_ASSERT(rpc);
+        RPC_LOCK_OWNED(rpc);
+
+        if (header->type == SDTP_DATA || header->type == SDTP_GRANT || header->type == SDTP_BUSY) {
+            rpc->silent_ticks = 0;
+        }
+        rpc->peer->outstanding_resends = 0; 
+        return true;
+
+    } else if (header->type != SDTP_CUTOFFS && header->type != SDTP_NEED_ACK
+        && header->type != SDTP_ACK && header->type != SDTP_RESEND) {
+
+        return false;
+    }
+
+    return true;
+}
+
 void
 sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *pcb)
 {
-    // TODO: For now without sdtp_lock_cache, I lock the rpc lock
-
     KASSERT(m != NULL, ("m must be valid"));
     MBUF_LEN_ASSERT(m, struct sdtp_common_header);
     KASSERT(m->m_flags & M_PKTHDR, ("mbuf must be a header mbuf"));
@@ -691,47 +750,22 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
     KASSERT(m->m_pkthdr.len >= sdtp_header_lengths[header->type - SDTP_DATA], ("mbuf must be at least the size of its type header"));
     KASSERT(m->m_len >= sdtp_header_lengths[header->type - SDTP_DATA], ("mbuf must contain its type header"));
 
-    int error = 0;
-    uint64_t id = sdtp_local_id(header->sender_id_be);
-    struct sdtp *sdtp = pcb->sdtp;
     struct sdtp_rpc *rpc;
+    struct sdtp_expected_rpc_ptr expected_rpc;
 
-    header = mtod(m, struct sdtp_common_header *);
-    sdtp_header_debug(header, "id: %x, is_client: %d", id, sdtp_is_client(id));
-
-    if (sdtp_is_client(id)) {
-        /* We are the RPC client */
-        rpc = sdtp_find_client_rpc(pcb, id);
-
-    } else if (header->type == SDTP_DATA) {
-        /* We are the RPC server, and it's a DATA packet */
-        rpc = sdtp_new_server_rpc(pcb, source, mtod(m, struct sdtp_data_header *), &error);
-        if (error != 0) {
-            goto sdtp_handle_packet_error;
-        }
-
-    } else {
-        /* We are the RPC server */
-        rpc = sdtp_find_server_rpc(pcb, source, ntohs(header->sport_be), id);
+    expected_rpc = sdtp_get_rpc(m, pcb, header, source);
+    if (SDTP_IS_ERROR(expected_rpc)) {
+        goto sdtp_handle_packet_error;
     }
+    rpc = SDTP_GET_VAL(expected_rpc);
 
-    if (rpc) {
-        if (header->type == SDTP_DATA || header->type == SDTP_GRANT || header->type == SDTP_BUSY) {
-            rpc->silent_ticks = 0; 
-        }
-        rpc->peer->outstanding_resends = 0; 
-
-    } else if (header->type != SDTP_CUTOFFS && header->type != SDTP_NEED_ACK
-        && header->type != SDTP_ACK && header->type != SDTP_RESEND) {
-
+    if (!sdtp_preprocess_rpc(rpc, header)) {
         goto sdtp_handle_packet_error;
     }
 
     switch (header->type) {
     case SDTP_DATA: {
-        int incoming_delta = sdtp_data_packet(m, rpc, pcb, source);
-        atomic_add_64(&sdtp->total_incoming_atomic, incoming_delta);
-
+        sdtp_data_packet(m, rpc, pcb, source);
         sdtp_rpc_unlock(rpc);
         if (pcb->dead_bufs >= 2 * pcb->sdtp->dead_buffs_limit) {
             sdtp_rpc_reap(pcb, /* reap_all */ false);
@@ -740,9 +774,8 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
     }
 
     case SDTP_CUTOFFS: {
-        struct sdtp_cutoffs_header *cutoffs_header;
-
-        cutoffs_header = mtod(m, struct sdtp_cutoffs_header *);
+        /* TODO: temporary solution */
+        struct sdtp_cutoffs_header *cutoffs_header = mtod(m, struct sdtp_cutoffs_header *);
         if (rpc) {
             rpc->peer->cutoff_version_be = cutoffs_header->cutoff_version_be;
             sdtp_rpc_unlock(rpc);

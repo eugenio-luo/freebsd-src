@@ -17,6 +17,8 @@
 #include "sdtp_pcb.h"
 #include "sdtp_queue.h"
 
+#include "sdtp_utils.h"
+
 struct sdtp_peer;
 
 struct sdtp_packet_slist_entry {
@@ -177,5 +179,7 @@ void sdtp_rpc_unlock(struct sdtp_rpc *rpc);
 void sdtp_free_mbuf(struct mbuf *buf);
 void sdtp_rpc_free(struct sdtp_rpc *rpc);
 int  sdtp_rpc_reap(struct sdtp_inpcb *pcb, bool reap_all);
+
+SDTP_DEFINE_EXPECTED_TYPE(rpc_ptr, struct sdtp_rpc *);
 
 #endif
