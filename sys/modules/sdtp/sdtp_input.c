@@ -102,7 +102,7 @@ sdtp_input(struct mbuf **mp, int *offp, int proto)
     }
 
     m_adj(m, iphlen);
-    m = m_pullup(m, sizeof(struct sdtp_common_header));
+    m = m_pullup(m, sdtp_header_lengths[sdtp_header->type - SDTP_DATA]);
     if (m == NULL) {
         goto sdtp_input_consumed_error;
     }
