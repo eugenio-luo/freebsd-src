@@ -89,7 +89,7 @@ sdtp_input(struct mbuf **mp, int *offp, int proto)
 
     ip_header = mtod(m, struct ip *);
     sdtp_header = (struct sdtp_common_header *)((caddr_t)ip_header + iphlen);
-    ipv4_to_ipv6(&ip_header->ip_src, &addr);
+    addr = ipv4_to_ipv6(&ip_header->ip_src);
 
     if (!sdtp_check_conditions(sdtp_header, m)) {
         goto sdtp_input_error;
