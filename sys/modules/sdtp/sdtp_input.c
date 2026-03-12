@@ -12,6 +12,7 @@
 #include "sdtp_structs.h"
 #include "sdtp_input.h"
 #include "sdtp_debug.h"
+#include "sdtp_test.h"
 
 #include <netinet/ip_icmp.h>
 
@@ -21,8 +22,8 @@
 
 extern struct sdtp *sdtp;
 
-static bool
-sdtp_check_conditions(const struct sdtp_common_header * const header, const struct mbuf * const m)
+SDTP_STATIC bool
+sdtp_check_header_conditions(const struct sdtp_common_header * const header, const struct mbuf * const m)
 {
     KASSERT(header != NULL, ("header must be valid"));
     KASSERT(m != NULL, ("m must be valid"));
@@ -39,20 +40,20 @@ sdtp_check_conditions(const struct sdtp_common_header * const header, const stru
     return true;
 }
 
-static struct sdtp_inpcb *
-sdtp_get_pcb(const struct sdtp_common_header * const header)
+SDTP_STATIC struct sdtp_inpcb *
+sdtp_get_pcb(struct sdtp *sdtp_struct, const struct sdtp_common_header * const header)
 {
     KASSERT(header != NULL, ("header must be valid"));
-    KASSERT(sdtp != NULL, ("sdtp struct must be valid"));
+    KASSERT(sdtp_struct != NULL, ("sdtp struct must be valid"));
 
     uint16_t dport;
     struct sdtp_inpcb *pcb;
 
     dport = ntohs(header->dport_be);
 
-    mtx_lock_spin(&sdtp->port_map.write_spinlock);
-    pcb = sdtp_find_inpcb(&sdtp->port_map, dport);
-    mtx_unlock_spin(&sdtp->port_map.write_spinlock);
+    mtx_lock_spin(&sdtp_struct->port_map.write_spinlock);
+    pcb = sdtp_find_inpcb(&sdtp_struct->port_map, dport);
+    mtx_unlock_spin(&sdtp_struct->port_map.write_spinlock);
 
     if (pcb) {
         VALID_PCB_ASSERT(pcb);
@@ -63,61 +64,78 @@ sdtp_get_pcb(const struct sdtp_common_header * const header)
 static void
 check_pcb_locks(struct sdtp_inpcb *pcb)
 {
+    KASSERT(pcb != NULL, ("pcb must be valid"));
+
     mtx_assert(&pcb->spinlock, MA_NOTOWNED);
     mtx_assert(&pcb->sdtp->port_map.write_spinlock, MA_NOTOWNED);
     mtx_assert(&pcb->sdtp->peers.write_spinlock, MA_NOTOWNED);
 }
 
+/* TODO: I don't really like that pullup is called here, it's not very clear from the function name */
+SDTP_STATIC bool
+sdtp_parse_header_and_src_addr(struct mbuf **m, int iphlen, struct sdtp_common_header **sdtp_header, struct in6_addr *addr)
+{
+    KASSERT(*m != NULL, ("m must be valid"));
+    KASSERT(sdtp_header != NULL, ("sdtp_header must be valid"));
+    KASSERT(addr != NULL, ("addr must be valid"));
+    KASSERT(iphlen > 0, ("iphlen must be positive"));
+
+    int offset;
+    struct ip *ip_header;
+
+    offset = iphlen + sizeof(struct sdtp_common_header);
+    *m = m_pullup(*m, offset);
+    if (*m == NULL) {
+        return false;
+    }
+
+    ip_header = mtod(*m, struct ip *);
+    *sdtp_header = (struct sdtp_common_header *)((caddr_t)ip_header + iphlen);
+    *addr = ipv4_to_ipv6(&ip_header->ip_src);
+
+    return true;
+}
+
+SDTP_STATIC struct mbuf *
+sdtp_pull_mbuf_up_to_sdtp_header(struct mbuf *m, uint8_t type, int iphlen)
+{
+    KASSERT(m != NULL, ("m must be valid"));
+    KASSERT(type >= SDTP_DATA && type <= SDTP_ACK, ("type must be valid"));
+    KASSERT(iphlen > 0, ("iphlen must be positive"));
+
+    m_adj(m, iphlen);
+    return m_pullup(m, sdtp_header_lengths[type - SDTP_DATA]);
+}
+
 int
 sdtp_input(struct mbuf **mp, int *offp, int proto)
 {
+    struct sdtp_common_header *header;
+    struct in6_addr src_addr;
     struct sdtp_inpcb *pcb = NULL;
-    struct mbuf *m;
-    struct ip *ip_header;
-    struct sdtp_common_header *sdtp_header;
-    struct in6_addr addr;
-    int offset, iphlen;
+    struct mbuf *m = *mp;
 
-    m = *mp;
-    iphlen = *offp;
-    offset = iphlen + sizeof(struct sdtp_common_header);
-
-    m = m_pullup(m, offset);
-    if (m == NULL) {
-        goto sdtp_input_consumed_error;
+    if (!sdtp_parse_header_and_src_addr(&m, *offp, &header, &src_addr)) {
+        goto sdtp_input_done;
     }
 
-    ip_header = mtod(m, struct ip *);
-    sdtp_header = (struct sdtp_common_header *)((caddr_t)ip_header + iphlen);
-    addr = ipv4_to_ipv6(&ip_header->ip_src);
-
-    if (!sdtp_check_conditions(sdtp_header, m)) {
-        goto sdtp_input_error;
+    if (!sdtp_check_header_conditions(header, m)) {
+        m_freem(m);
+        goto sdtp_input_done;
     }
 
-    pcb = sdtp_get_pcb(sdtp_header);
-    if (pcb == NULL) {
+    if ((pcb = sdtp_get_pcb(sdtp, header)) == NULL) {
         icmp_error(m, ICMP_UNREACH, ICMP_UNREACH_PORT, 0, 0);
-        goto sdtp_input_consumed_error;
+        goto sdtp_input_done;
     }
 
-    m_adj(m, iphlen);
-    m = m_pullup(m, sdtp_header_lengths[sdtp_header->type - SDTP_DATA]);
-    if (m == NULL) {
-        goto sdtp_input_consumed_error;
+    if ((m = sdtp_pull_mbuf_up_to_sdtp_header(m, header->type, *offp)) == NULL) {
+        goto sdtp_input_done;
     }
 
-    sdtp_handle_packet(m, &addr, pcb);
-    // TODO: add sdtp_send_grants(sdtp);
-    if (pcb) {
-        check_pcb_locks(pcb);
-    }
-    return IPPROTO_DONE;
+    sdtp_handle_packet(m, &src_addr, pcb);
 
-sdtp_input_error:
-    m_freem(m);
-
-sdtp_input_consumed_error:
+sdtp_input_done:
     if (pcb) {
         check_pcb_locks(pcb);
     }
