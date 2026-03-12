@@ -60,6 +60,14 @@ sdtp_get_pcb(const struct sdtp_common_header * const header)
     return (pcb != NULL && pcb->socket != NULL) ? pcb : NULL;
 }
 
+static void
+check_pcb_locks(struct sdtp_inpcb *pcb)
+{
+    mtx_assert(&pcb->spinlock, MA_NOTOWNED);
+    mtx_assert(&pcb->sdtp->port_map.write_spinlock, MA_NOTOWNED);
+    mtx_assert(&pcb->sdtp->peers.write_spinlock, MA_NOTOWNED);
+}
+
 int
 sdtp_input(struct mbuf **mp, int *offp, int proto)
 {
@@ -76,7 +84,7 @@ sdtp_input(struct mbuf **mp, int *offp, int proto)
 
     m = m_pullup(m, offset);
     if (m == NULL) {
-        goto sdtp_input_done;
+        goto sdtp_input_consumed_error;
     }
 
     ip_header = mtod(m, struct ip *);
@@ -84,35 +92,34 @@ sdtp_input(struct mbuf **mp, int *offp, int proto)
     ipv4_to_ipv6(&ip_header->ip_src, &addr);
 
     if (!sdtp_check_conditions(sdtp_header, m)) {
-        goto sdtp_input_done;
+        goto sdtp_input_error;
     }
 
     pcb = sdtp_get_pcb(sdtp_header);
     if (pcb == NULL) {
         icmp_error(m, ICMP_UNREACH, ICMP_UNREACH_PORT, 0, 0);
-        goto sdtp_input_consumed;
+        goto sdtp_input_consumed_error;
     }
 
     m_adj(m, iphlen);
     m = m_pullup(m, sizeof(struct sdtp_common_header));
     if (m == NULL) {
-        goto sdtp_input_consumed;
+        goto sdtp_input_consumed_error;
     }
 
-    if (sdtp_handle_packet(m, &addr, pcb)) {
-        goto sdtp_input_consumed;
+    sdtp_handle_packet(m, &addr, pcb);
+    // TODO: add sdtp_send_grants(sdtp);
+    if (pcb) {
+        check_pcb_locks(pcb);
     }
+    return IPPROTO_DONE;
 
-sdtp_input_done:
+sdtp_input_error:
     m_freem(m);
 
-sdtp_input_consumed:
-    // TODO: add sdtp_send_grants(sdtp);
-
+sdtp_input_consumed_error:
     if (pcb) {
-        mtx_assert(&pcb->spinlock, MA_NOTOWNED);
-        mtx_assert(&pcb->sdtp->port_map.write_spinlock, MA_NOTOWNED);
-        mtx_assert(&pcb->sdtp->peers.write_spinlock, MA_NOTOWNED);
+        check_pcb_locks(pcb);
     }
     return IPPROTO_DONE;
 }
