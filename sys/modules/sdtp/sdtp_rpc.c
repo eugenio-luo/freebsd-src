@@ -276,6 +276,10 @@ sdtp_new_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, struct sdtp
         goto sdtp_new_server_rpc_error;
     }
 
+    if (ntohl(header->data_segment.offset_be) == -1) {
+        header->data_segment.offset_be = header->common.sequence_be;
+    }
+
     rpc->sdtpcb = pcb;
     rpc->state = SDTP_RPC_INCOMING;
     atomic_store_32(&rpc->flags_atomic, 0);
@@ -685,55 +689,42 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
 
     KASSERT(header->type >= SDTP_DATA && header->type <= SDTP_ACK, ("header type must be valid (%#x)", header->type));
     KASSERT(m->m_pkthdr.len >= sdtp_header_lengths[header->type - SDTP_DATA], ("mbuf must be at least the size of its type header"));
+    KASSERT(m->m_len >= sdtp_header_lengths[header->type - SDTP_DATA], ("mbuf must contain its type header"));
 
-    int error = 0, buf_consumed = 0;
+    int error = 0;
     uint64_t id = sdtp_local_id(header->sender_id_be);
     struct sdtp *sdtp = pcb->sdtp;
     struct sdtp_rpc *rpc;
 
-    m = m_pullup(m, sdtp_header_lengths[header->type - SDTP_DATA]);
-    if (!m) {
-        goto sdtp_handle_packet_error;
-    }
-
     header = mtod(m, struct sdtp_common_header *);
     sdtp_header_debug(header, "id: %x, is_client: %d", id, sdtp_is_client(id));
 
-    if (!sdtp_is_client(id)) {
-        if (header->type == SDTP_DATA) {
-            m = m_pullup(m, sizeof(struct sdtp_data_header));
-            if (!m) {
-                goto sdtp_handle_packet_error;
-            }
-            struct sdtp_data_header *data_header = mtod(m, struct sdtp_data_header *);
-            if (ntohl(data_header->data_segment.offset_be) == -1) {
-                data_header->data_segment.offset_be = data_header->common.sequence_be;
-            }
-
-            rpc = sdtp_new_server_rpc(pcb, source, data_header, &error);
-            if (error) {
-                rpc = NULL;
-                goto sdtp_handle_packet_error;
-            }
-        } else {
-            rpc = sdtp_find_server_rpc(pcb, source, ntohs(header->sport_be), id);
-        }
-    } else {
+    if (sdtp_is_client(id)) {
+        /* We are the RPC client */
         rpc = sdtp_find_client_rpc(pcb, id);
-    }
 
-    if (!rpc) {
-        if (header->type != SDTP_CUTOFFS && header->type != SDTP_NEED_ACK
-            && header->type != SDTP_ACK && header->type != SDTP_RESEND) {
+    } else if (header->type == SDTP_DATA) {
+        /* We are the RPC server, and it's a DATA packet */
+        rpc = sdtp_new_server_rpc(pcb, source, mtod(m, struct sdtp_data_header *), &error);
+        if (error != 0) {
             goto sdtp_handle_packet_error;
         }
+
     } else {
+        /* We are the RPC server */
+        rpc = sdtp_find_server_rpc(pcb, source, ntohs(header->sport_be), id);
+    }
+
+    if (rpc) {
         if (header->type == SDTP_DATA || header->type == SDTP_GRANT || header->type == SDTP_BUSY) {
             rpc->silent_ticks = 0; 
         }
         rpc->peer->outstanding_resends = 0; 
 
-        // TODO: implement frozen
+    } else if (header->type != SDTP_CUTOFFS && header->type != SDTP_NEED_ACK
+        && header->type != SDTP_ACK && header->type != SDTP_RESEND) {
+
+        goto sdtp_handle_packet_error;
     }
 
     switch (header->type) {
