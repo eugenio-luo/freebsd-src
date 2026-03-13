@@ -16,12 +16,12 @@
         int error; \
     }; \
 
-#define SDTP_UNEXPECTED(EXP_T, ERR) \
+#define SDTP_MAKE_UNEXPECTED(EXP_T, ERR) \
     ( EXP_T ) { \
         .error = (ERR), \
     } \
 
-#define SDTP_EXPECTED(EXP_T, V) \
+#define SDTP_MAKE_EXPECTED(EXP_T, V) \
     ( EXP_T ) { \
         .value = (V), .error = 0, \
     } \
