@@ -478,90 +478,94 @@ sdtp_rpc_acked(struct sdtp_inpcb *pcb, struct in6_addr *source_addr, uint16_t so
     }
 }
 
-/*
- * sdtp_data_packet()
- */
+/* return true if RPC is alive, otherwise false. We need to check because we drop the RPC lock */
+static bool
+sdtp_ack_client(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc, struct sdtp_data_header *header, struct in6_addr *source)
+{
+    if (header->ack.client_id_be == 0) {
+        return true;
+    }
+
+    sdtp_rpc_unlock(rpc);
+    sdtp_rpc_acked(pcb, source, ntohs(header->common.sport_be), &header->ack);
+    sdtp_rpc_lock(rpc);
+
+    return rpc->state != SDTP_RPC_DEAD;
+}
+
+/* return false if the RPC isn't in the correct state */
+static bool
+sdtp_prepare_rpc_for_data(struct sdtp_rpc *rpc)
+{
+    bool is_client = sdtp_is_client(rpc->id);
+
+    if (rpc->state == SDTP_RPC_INCOMING) {
+        return true;
+    }
+
+    if (!is_client && rpc->msgin.total_length >= 0) {
+        return false;
+    }
+
+    if (is_client) {
+        if (rpc->state != SDTP_RPC_OUTGOING) {
+            return false;
+        }
+
+        rpc->state = SDTP_RPC_INCOMING;
+    }
+
+    return true;
+}
+
 static void
 sdtp_data_packet(struct sdtp *sdtp, struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_inpcb *pcb, struct in6_addr *source)
 {
     KASSERT(sdtp != NULL, ("sdtp must be valid"));
-
-    RPC_LOCK_OWNED(rpc);
-
-    MBUF_LEN_ASSERT(m, struct sdtp_data_header);
-    VALID_PCB_ASSERT(pcb);
+    KASSERT(m != NULL, ("m must be valid"));
     VALID_RPC_ASSERT(rpc);
+    RPC_LOCK_OWNED(rpc);
+    VALID_PCB_ASSERT(pcb);
+    KASSERT(source != NULL, ("source must be valid"));
 
     struct sdtp_data_header *header = mtod(m, struct sdtp_data_header *);
-    bool rpc_handoff = false;
-
+    sdtp_set_header_offset(header);
     sdtp_data_header_debug(header, NULL);
 
-    sdtp_set_header_offset(header);
-
-    if (header->ack.client_id_be > 0) {
-        sdtp_rpc_unlock(rpc);
-        sdtp_rpc_acked(pcb, source, ntohs(header->common.sport_be), &header->ack);
-        sdtp_rpc_lock(rpc);
-
-        if (rpc->state == SDTP_RPC_DEAD) {
-            goto sdtp_data_packet_error;
-        }
+    if (!sdtp_ack_client(pcb, rpc, header, source)) {
+        goto sdtp_data_packet_error;
     }
 
-    if (rpc->state != SDTP_RPC_INCOMING) {
-        if (sdtp_is_client(rpc->id)) {
-            if (rpc->state != SDTP_RPC_OUTGOING) {
-                goto sdtp_data_packet_error;
-            }
-            rpc->state = SDTP_RPC_INCOMING;
-        } else {
-            if (rpc->msgin.total_length >= 0) {
-                goto sdtp_data_packet_error;
-            }
-        }
+    if (!sdtp_prepare_rpc_for_data(rpc)) {
+        goto sdtp_data_packet_error;
     }
 
     if (rpc->msgin.total_length < 0) {
         sdtp_message_in_init(&rpc->msgin, ntohl(header->message_length_be), ntohl(header->incoming_be));
         if (rpc->ctx) {
 		    /* TODO: Set sdtp_max_pkt_data for first data packet */
-            (void) rpc->ctx;
         }
     }
 
     if (rpc->ctx) {
-        // TODO: sdtp_add_packet()
-        (void) rpc->ctx;
+        // TODO: sdtp_add_packet() and handoff() 
         goto sdtp_data_packet_error;
     } else {
-        (void) rpc->ctx;
         sdtp_add_packet(m, rpc, header);
-    }
 
-    if (rpc->ctx) {
-        (void) rpc->ctx;
-        goto sdtp_data_packet_error;
-        // TODO: rpc_handoff = 
-    } else {
-        rpc_handoff = !(atomic_load_32(&rpc->flags_atomic) & RPC_PKTS_READY);
-        sdtp_rpc_debug(rpc, "should handoff? %d", rpc_handoff);
-    }
-
-    if (rpc_handoff) {
-        atomic_set_32(&rpc->flags_atomic, RPC_PKTS_READY);
-        mtx_lock_spin(&pcb->spinlock);
-        sdtp_handoff_rpc(rpc);
-        mtx_unlock_spin(&pcb->spinlock);
+        if (!(atomic_load_32(&rpc->flags_atomic) & RPC_PKTS_READY)) {
+            atomic_set_32(&rpc->flags_atomic, RPC_PKTS_READY);
+            mtx_lock_spin(&pcb->spinlock);
+            sdtp_handoff_rpc(rpc);
+            mtx_unlock_spin(&pcb->spinlock);
+        }
     }
 
     if (rpc->msgin.scheduled) {
-		(void) rpc;
         // TODO: homa_check_grantable(homa, rpc);
     }
 
     if (ntohs(header->cutoff_version_be) != sdtp->cutoff_version) {
-        (void) rpc;
         //TODO: The sender has out-of-date cutoffs
     }
 
