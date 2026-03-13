@@ -387,28 +387,24 @@ sdtp_message_in_init(struct sdtp_message_in *msgin, int length, int incoming)
 	msgin->num_bpages = 0;
 }
 
-/*
- * sdtp_add_packet()
- *
- * rpc need to be locked
- */
 static void
 sdtp_add_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_data_header *header)
 {
-    RPC_LOCK_OWNED(rpc);
+    KASSERT(m != NULL, ("m must be valid"));
     MBUF_LEN_ASSERT(m, struct sdtp_data_header);
     KASSERT(m->m_flags & M_PKTHDR, ("mbuf must be a header mbuf"));
+    VALID_RPC_ASSERT(rpc);
+    RPC_LOCK_OWNED(rpc);
+    KASSERT(header != NULL, ("header must be valid"));
 
     struct sdtp_packet_tailq_entry *packet, *new;
     int offset = ntohl(header->data_segment.offset_be);
     int data_bytes = m->m_pkthdr.len - sizeof(struct sdtp_data_header);
-
-    sdtp_data_header_debug(header, "size: %d", data_bytes);
-
-    KASSERT(data_bytes > 0, ("data_bytes must be positive"));
-
     int floor = rpc->msgin.copied_out;
     int ceiling = rpc->msgin.total_length;
+
+    sdtp_data_header_debug(header, "size: %d", data_bytes);
+    KASSERT(data_bytes > 0, ("data_bytes must be positive"));
 
     TAILQ_FOREACH_REVERSE(packet, &rpc->msgin.packets, sdtp_packet_tailq, link) {
 
@@ -436,7 +432,6 @@ sdtp_add_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_data_header *h
     }
 
     if (header->retransmit) {
-        (void) header;
         //TODO: homa_freeze()
     }
 
