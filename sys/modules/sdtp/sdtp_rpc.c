@@ -70,15 +70,14 @@ sdtp_is_client(uint64_t id)
  * pcb should be locked
  */
 static void
-sdtp_handoff_rpc(struct sdtp_rpc *rpc)
+sdtp_handoff_rpc(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc)
 {
     VALID_RPC_ASSERT(rpc);
+    RPC_LOCK_OWNED(rpc);
+    VALID_PCB_ASSERT(pcb);
+    mtx_assert(&pcb->spinlock, MA_OWNED);
 
 	struct sdtp_interest *interest;
-    struct sdtp_inpcb *pcb = rpc->sdtpcb;
-
-    mtx_assert(&pcb->spinlock, MA_OWNED);
-    mtx_assert(rpc->spinlock_p, MA_OWNED);
 
     sdtp_rpc_debug(rpc, "handing off");
 
@@ -351,7 +350,7 @@ sdtp_new_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, struct sdtp
     if (!rpc->ctx) {
         if (ntohl(header->data_segment.offset_be) == 0) {
             atomic_set_32(&rpc->flags_atomic, RPC_PKTS_READY);
-            sdtp_handoff_rpc(rpc);
+            sdtp_handoff_rpc(pcb, rpc);
         }
     }
 
@@ -551,7 +550,7 @@ sdtp_data_packet(struct sdtp *sdtp, struct mbuf *m, struct sdtp_rpc *rpc, struct
         if (!(atomic_load_32(&rpc->flags_atomic) & RPC_PKTS_READY)) {
             atomic_set_32(&rpc->flags_atomic, RPC_PKTS_READY);
             mtx_lock_spin(&pcb->spinlock);
-            sdtp_handoff_rpc(rpc);
+            sdtp_handoff_rpc(pcb, rpc);
             mtx_unlock_spin(&pcb->spinlock);
         }
     }
