@@ -694,31 +694,30 @@ sdtp_get_rpc(struct mbuf *m, struct sdtp_inpcb *pcb, struct sdtp_common_header *
     KASSERT(header != NULL, ("header must be valid"));
     KASSERT(source != NULL, ("source must be valid"));
 
-    int error = 0;
     uint64_t id = sdtp_local_id(header->sender_id_be);
+    bool is_client = sdtp_is_client(id);
     struct sdtp_rpc *rpc;
+    struct sdtp_expected_rpc_ptr expected_rpc;
 
     sdtp_header_debug(header, "id: %x, is_client: %d", id, sdtp_is_client(id));
 
-    if (sdtp_is_client(id)) {
-        /* We are the RPC client */
-        rpc = sdtp_find_client_rpc(pcb, id);
-
-    } else if (header->type == SDTP_DATA) {
+    if (!is_client && header->type == SDTP_DATA) {
         /* We are the RPC server and it's a DATA packet */
-        rpc = sdtp_new_server_rpc(pcb, source, mtod(m, struct sdtp_data_header *), &error);
-        if (error != 0) {
-            return SDTP_UNEXPECTED(struct sdtp_expected_rpc_ptr, error);
+        expected_rpc = sdtp_new_server_rpc(pcb, source, mtod(m, struct sdtp_data_header *));
+        if (!SDTP_IS_ERROR(expected_rpc) && SDTP_GET_VAL(expected_rpc) != NULL) {
+            VALID_RPC_ASSERT(SDTP_GET_VAL(expected_rpc));
+            RPC_LOCK_OWNED(SDTP_GET_VAL(expected_rpc));
         }
-
-    } else {
-        /* We are the RPC server */
-        rpc = sdtp_find_server_rpc(pcb, source, ntohs(header->sport_be), id);
+        return expected_rpc;
     }
 
-    VALID_RPC_ASSERT(rpc);
-    RPC_LOCK_OWNED(rpc);
-    return SDTP_EXPECTED(struct sdtp_expected_rpc_ptr, rpc);
+    rpc = is_client ? sdtp_find_client_rpc(pcb, id)
+                    : sdtp_find_server_rpc(pcb, source, ntohs(header->sport_be), id);
+    if (rpc) {
+        VALID_RPC_ASSERT(rpc);
+        RPC_LOCK_OWNED(rpc);
+    }
+    return SDTP_MAKE_EXPECTED(struct sdtp_expected_rpc_ptr, rpc);
 }
 
 SDTP_STATIC bool
