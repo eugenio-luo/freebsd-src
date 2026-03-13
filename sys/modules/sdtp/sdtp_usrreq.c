@@ -599,7 +599,7 @@ sdtp_send_request(struct sdtp_inpcb *pcb,
     switch (sockaddr->sa_family) {
     case AF_INET: {
         struct sockaddr_in *sin = (struct sockaddr_in *)sockaddr;
-        ipv4_to_ipv6(&sin->sin_addr, &addr);
+        addr = ipv4_to_ipv6(&sin->sin_addr);
         port = ntohs(sin->sin_port);
         break;
     }
@@ -664,7 +664,7 @@ sdtp_send_response(struct sdtp_inpcb *pcb,
     switch (sockaddr->sa_family) {
     case AF_INET: {
         struct sockaddr_in *sin = (struct sockaddr_in *)sockaddr;
-        ipv4_to_ipv6(&sin->sin_addr, &addr);
+        addr = ipv4_to_ipv6(&sin->sin_addr);
         port = ntohs(sin->sin_port);
         break;
     }

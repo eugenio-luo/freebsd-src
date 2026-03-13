@@ -78,13 +78,14 @@ LIST_HEAD(sdtp_peer_list, sdtp_peer);
 
 TAILQ_HEAD(sdtp_dead_dst_tailq, sdtp_dead_dst);
 
-static inline void
-ipv4_to_ipv6(struct in_addr *from, struct in6_addr *to)
+static inline struct in6_addr
+ipv4_to_ipv6(struct in_addr *from)
 {
-    memset(to, 0, sizeof(*to));
-    to->s6_addr[10] = 0xFF; 
-    to->s6_addr[11] = 0xFF; 
-    memcpy(&to->s6_addr[12], &from->s_addr, sizeof(from->s_addr));
+    struct in6_addr addr = { 0 };
+    addr.s6_addr[10] = 0xFF;
+    addr.s6_addr[11] = 0xFF;
+    memcpy(&addr.s6_addr[12], &from->s_addr, sizeof(from->s_addr));
+    return addr;
 }
 
 static inline void

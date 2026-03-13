@@ -17,6 +17,8 @@
 #include "sdtp_pcb.h"
 #include "sdtp_queue.h"
 
+#include "sdtp_utils.h"
+
 struct sdtp_peer;
 
 struct sdtp_packet_slist_entry {
@@ -171,11 +173,13 @@ struct sdtp_rpc *sdtp_new_client_rpc(struct sdtp_inpcb *pcb, struct in6_addr *de
 struct sdtp_rpc *sdtp_find_client_rpc(struct sdtp_inpcb *pcb, uint64_t id);
 struct sdtp_rpc *sdtp_find_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, uint16_t port, uint64_t id);
 bool sdtp_is_client(uint64_t id);
-bool sdtp_handle_packet(struct mbuf *m, struct in6_addr *addr, struct sdtp_inpcb *pcb);
+void sdtp_handle_packet(struct mbuf *m, struct in6_addr *addr, struct sdtp_inpcb *pcb);
 void sdtp_rpc_lock(struct sdtp_rpc *rpc);
 void sdtp_rpc_unlock(struct sdtp_rpc *rpc);
 void sdtp_free_mbuf(struct mbuf *buf);
 void sdtp_rpc_free(struct sdtp_rpc *rpc);
 int  sdtp_rpc_reap(struct sdtp_inpcb *pcb, bool reap_all);
+
+SDTP_DEFINE_EXPECTED_TYPE(rpc_ptr, struct sdtp_rpc *);
 
 #endif

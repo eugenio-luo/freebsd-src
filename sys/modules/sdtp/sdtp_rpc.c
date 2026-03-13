@@ -13,6 +13,7 @@
 #include "sdtp_structs.h"
 #include "sdtp_peer.h"
 #include "sdtp_debug.h"
+#include "sdtp_test.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -69,15 +70,14 @@ sdtp_is_client(uint64_t id)
  * pcb should be locked
  */
 static void
-sdtp_handoff_rpc(struct sdtp_rpc *rpc)
+sdtp_handoff_rpc(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc)
 {
     VALID_RPC_ASSERT(rpc);
+    RPC_LOCK_OWNED(rpc);
+    VALID_PCB_ASSERT(pcb);
+    mtx_assert(&pcb->spinlock, MA_OWNED);
 
 	struct sdtp_interest *interest;
-    struct sdtp_inpcb *pcb = rpc->sdtpcb;
-
-    mtx_assert(&pcb->spinlock, MA_OWNED);
-    mtx_assert(rpc->spinlock_p, MA_OWNED);
 
     sdtp_rpc_debug(rpc, "handing off");
 
@@ -254,37 +254,21 @@ sdtp_new_client_rpc_error:
     return NULL;
 }
 
-static struct sdtp_rpc *
-sdtp_new_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, struct sdtp_data_header *header, int *error)
+SDTP_STATIC inline void
+sdtp_set_header_offset(struct sdtp_data_header *header)
 {
-    *error = 0;
-    uint64_t id = sdtp_local_id(header->common.sender_id_be);
-    struct sdtp_rpc_bucket *bucket = sdtp_server_rpc_bucket(pcb, id);
-    struct sdtp_rpc *rpc = sdtp_find_server_rpc(pcb, source, ntohs(header->common.sport_be), id);
-
-    if (rpc) {
-        sdtp_pcb_debug(pcb, "no need for new rpc, found old one");
-        return rpc;
+    if (ntohl(header->data_segment.offset_be) == -1) {
+        header->data_segment.offset_be = header->common.sequence_be;
     }
+}
 
-    sdtp_pcb_debug(pcb, "creating new server rpc");
-
-    rpc = SDTP_ZONE_GET(zones.sdtp_zone_rpc, struct sdtp_rpc);
-    if (!rpc) {
-        *error = ENOMEM;
-        sdtp_pcb_debug(pcb, "not enough memory for new server rpc");
-        goto sdtp_new_server_rpc_error;
-    }
-
+static void
+sdtp_init_server_rpc_fields(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc, struct sdtp_data_header *header, uint64_t id)
+{
     rpc->sdtpcb = pcb;
     rpc->state = SDTP_RPC_INCOMING;
     atomic_store_32(&rpc->flags_atomic, 0);
     atomic_store_32(&rpc->grants_in_progress_atomic, 0);
-    rpc->peer = sdtp_find_peer(&pcb->sdtp->peers, source, &pcb->inp, error);
-    if (*error != 0) {
-        sdtp_pcb_debug(pcb, "new server rpc can't find peer");
-        goto sdtp_new_server_rpc_error;
-    }
     rpc->dport = ntohs(header->common.sport_be);
     rpc->id = id;
     rpc->completion_cookie = 0;
@@ -307,16 +291,12 @@ sdtp_new_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, struct sdtp
 	rpc->done_timer_ticks = 0;
 	rpc->magic = SDTP_RPC_MAGIC;
 	rpc->start_cycles = get_cyclecount();
+}
 
-    mtx_lock_spin(&pcb->spinlock);
-    if (pcb->shutdown) {
-        mtx_unlock_spin(&pcb->spinlock);
-        *error = ESHUTDOWN;
-        goto sdtp_new_server_rpc_error;
-    }
-
-    // TODO: HomaLS context initialization
-    // rpc->ctx = set_rpc_context();
+static void
+sdtp_lock_rpc_and_insert_pcb_list(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc, uint64_t id)
+{
+    struct sdtp_rpc_bucket *bucket = sdtp_server_rpc_bucket(pcb, id);
 
     SDTP_QUEUE_LOCK(&pcb->active_rpcs);
     SDTP_LIST_LOCK(&bucket->rpcs);
@@ -324,22 +304,65 @@ sdtp_new_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, struct sdtp
     SDTP_LIST_INSERT_HEAD_LOCKED(&bucket->rpcs, rpc, hash_links);
     SDTP_QUEUE_INSERT_TAIL_LOCKED(&pcb->active_rpcs, rpc, active_links);
     SDTP_QUEUE_UNLOCK(&pcb->active_rpcs);
+}
+
+SDTP_STATIC struct sdtp_expected_rpc_ptr
+sdtp_new_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, struct sdtp_data_header *header)
+{
+    int error = 0;
+    uint64_t id = sdtp_local_id(header->common.sender_id_be);
+    struct sdtp_rpc *rpc = sdtp_find_server_rpc(pcb, source, ntohs(header->common.sport_be), id);
+
+    if (rpc) {
+        sdtp_pcb_debug(pcb, "no need for new rpc, found old one");
+        return SDTP_MAKE_EXPECTED(struct sdtp_expected_rpc_ptr, rpc);
+    }
+
+    sdtp_pcb_debug(pcb, "creating new server rpc");
+
+    rpc = SDTP_ZONE_GET(zones.sdtp_zone_rpc, struct sdtp_rpc);
+    if (!rpc) {
+        error = ENOMEM;
+        sdtp_pcb_debug(pcb, "not enough memory for new server rpc");
+        goto sdtp_new_server_rpc_error;
+    }
+
+    sdtp_set_header_offset(header);
+    sdtp_init_server_rpc_fields(pcb, rpc, header, id);
+    rpc->peer = sdtp_find_peer(&pcb->sdtp->peers, source, &pcb->inp, &error);
+    if (error != 0) {
+        sdtp_pcb_debug(pcb, "new server rpc can't find peer");
+        goto sdtp_new_server_rpc_error;
+    }
+
+    mtx_lock_spin(&pcb->spinlock);
+    if (pcb->shutdown) {
+        mtx_unlock_spin(&pcb->spinlock);
+        error = ESHUTDOWN;
+        goto sdtp_new_server_rpc_error;
+    }
+
+    // TODO: HomaLS context initialization
+    // rpc->ctx = set_rpc_context();
+
+    sdtp_lock_rpc_and_insert_pcb_list(pcb, rpc, id);
+
     if (!rpc->ctx) {
         if (ntohl(header->data_segment.offset_be) == 0) {
             atomic_set_32(&rpc->flags_atomic, RPC_PKTS_READY);
-            sdtp_handoff_rpc(rpc);
+            sdtp_handoff_rpc(pcb, rpc);
         }
     }
 
     mtx_unlock_spin(&pcb->spinlock);
-    return rpc;
+    return SDTP_MAKE_EXPECTED(struct sdtp_expected_rpc_ptr, rpc);
 
 sdtp_new_server_rpc_error:
     // TODO: free peer
     if (rpc) {
         SDTP_ZONE_FREE(zones.sdtp_zone_rpc, rpc);
     }
-    return NULL;
+    return SDTP_MAKE_UNEXPECTED(struct sdtp_expected_rpc_ptr, error);
 }
 
 static void
@@ -363,28 +386,24 @@ sdtp_message_in_init(struct sdtp_message_in *msgin, int length, int incoming)
 	msgin->num_bpages = 0;
 }
 
-/*
- * sdtp_add_packet()
- *
- * rpc need to be locked
- */
-static void
+static bool
 sdtp_add_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_data_header *header)
 {
-    RPC_LOCK_OWNED(rpc);
+    KASSERT(m != NULL, ("m must be valid"));
     MBUF_LEN_ASSERT(m, struct sdtp_data_header);
     KASSERT(m->m_flags & M_PKTHDR, ("mbuf must be a header mbuf"));
+    VALID_RPC_ASSERT(rpc);
+    RPC_LOCK_OWNED(rpc);
+    KASSERT(header != NULL, ("header must be valid"));
 
     struct sdtp_packet_tailq_entry *packet, *new;
     int offset = ntohl(header->data_segment.offset_be);
     int data_bytes = m->m_pkthdr.len - sizeof(struct sdtp_data_header);
-
-    sdtp_data_header_debug(header, "size: %d", data_bytes);
-
-    KASSERT(data_bytes > 0, ("data_bytes must be positive"));
-
     int floor = rpc->msgin.copied_out;
     int ceiling = rpc->msgin.total_length;
+
+    sdtp_data_header_debug(header, "size: %d", data_bytes);
+    KASSERT(data_bytes > 0, ("data_bytes must be positive"));
 
     TAILQ_FOREACH_REVERSE(packet, &rpc->msgin.packets, sdtp_packet_tailq, link) {
 
@@ -404,15 +423,11 @@ sdtp_add_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_data_header *h
     }
 
     if ((offset < floor) || (offset + data_bytes > ceiling)) {
-        // TODO:: free shouldn't be called while holding locks
-        // maybe just save them and free'd them at the end
-        sdtp_free_mbuf(m);
         sdtp_rpc_debug(rpc, "drop packet");
-        return;
+        return false;
     }
 
     if (header->retransmit) {
-        (void) header;
         //TODO: homa_freeze()
     }
 
@@ -428,6 +443,7 @@ sdtp_add_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_data_header *h
     rpc->msgin.bytes_remaining -= data_bytes;
     rpc->msgin.num_bufs++;
     sdtp_rpc_debug(rpc, "new packet added");
+    return true;
 }
 
 static void
@@ -454,106 +470,103 @@ sdtp_rpc_acked(struct sdtp_inpcb *pcb, struct in6_addr *source_addr, uint16_t so
     }
 }
 
-/*
- * sdtp_data_packet()
- *
- * rpc need to be locked
- */
-static int 
-sdtp_data_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_inpcb *pcb, struct in6_addr *source)
+/* return true if RPC is alive, otherwise false. We need to check because we drop the RPC lock */
+static bool
+sdtp_ack_client(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc, struct sdtp_data_header *header, struct in6_addr *source)
 {
-    RPC_LOCK_OWNED(rpc);
+    if (header->ack.client_id_be == 0) {
+        return true;
+    }
 
-    MBUF_LEN_ASSERT(m, struct sdtp_data_header);
-    VALID_PCB_ASSERT(pcb);
+    sdtp_rpc_unlock(rpc);
+    sdtp_rpc_acked(pcb, source, ntohs(header->common.sport_be), &header->ack);
+    sdtp_rpc_lock(rpc);
+
+    return rpc->state != SDTP_RPC_DEAD;
+}
+
+/* return false if the RPC isn't in the correct state */
+static bool
+sdtp_prepare_rpc_for_data(struct sdtp_rpc *rpc)
+{
+    bool is_client = sdtp_is_client(rpc->id);
+
+    if (rpc->state == SDTP_RPC_INCOMING) {
+        return true;
+    }
+
+    if (!is_client && rpc->msgin.total_length >= 0) {
+        return false;
+    }
+
+    if (is_client) {
+        if (rpc->state != SDTP_RPC_OUTGOING) {
+            return false;
+        }
+
+        rpc->state = SDTP_RPC_INCOMING;
+    }
+
+    return true;
+}
+
+static bool
+sdtp_data_packet(struct sdtp *sdtp, struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_inpcb *pcb, struct in6_addr *source)
+{
+    KASSERT(sdtp != NULL, ("sdtp must be valid"));
+    KASSERT(m != NULL, ("m must be valid"));
     VALID_RPC_ASSERT(rpc);
+    RPC_LOCK_OWNED(rpc);
+    VALID_PCB_ASSERT(pcb);
+    KASSERT(source != NULL, ("source must be valid"));
 
     struct sdtp_data_header *header = mtod(m, struct sdtp_data_header *);
-    struct sdtp *sdtp = pcb->sdtp;
-    bool rpc_handoff = false;
-    int old_remaining, incoming_delta = 0;
-
+    sdtp_set_header_offset(header);
     sdtp_data_header_debug(header, NULL);
 
-    if (ntohl(header->data_segment.offset_be) == -1) {
-        header->data_segment.offset_be = header->common.sequence_be;
+    if (!sdtp_ack_client(pcb, rpc, header, source)) {
+        goto sdtp_data_packet_error;
     }
 
-    if (header->ack.client_id_be > 0) {
-        sdtp_rpc_unlock(rpc);
-        sdtp_rpc_acked(pcb, source, ntohs(header->common.sport_be), &header->ack);
-        sdtp_rpc_lock(rpc);
-
-        if (rpc->state == SDTP_RPC_DEAD) {
-            goto sdtp_data_packet_error;
-        }
-    }
-
-    if (rpc->state != SDTP_RPC_INCOMING) {
-        if (sdtp_is_client(rpc->id)) {
-            if (rpc->state != SDTP_RPC_OUTGOING) {
-                goto sdtp_data_packet_error;
-            }
-            rpc->state = SDTP_RPC_INCOMING;
-        } else {
-            if (rpc->msgin.total_length >= 0) {
-                goto sdtp_data_packet_error;
-            }
-        }
+    if (!sdtp_prepare_rpc_for_data(rpc)) {
+        goto sdtp_data_packet_error;
     }
 
     if (rpc->msgin.total_length < 0) {
         sdtp_message_in_init(&rpc->msgin, ntohl(header->message_length_be), ntohl(header->incoming_be));
-        incoming_delta += rpc->msgin.incoming;
-
         if (rpc->ctx) {
 		    /* TODO: Set sdtp_max_pkt_data for first data packet */
-            (void) rpc->ctx;
         }
     }
 
-    old_remaining = rpc->msgin.bytes_remaining;
     if (rpc->ctx) {
-        // TODO: sdtp_add_packet()
-        (void) rpc->ctx;
+        // TODO: sdtp_add_packet() and handoff() 
         goto sdtp_data_packet_error;
     } else {
-        (void) rpc->ctx;
-        sdtp_add_packet(m, rpc, header);
-    }
-    incoming_delta -= old_remaining - rpc->msgin.bytes_remaining;
+        if (!sdtp_add_packet(m, rpc, header)) {
+            goto sdtp_data_packet_error;
+        }
 
-    if (rpc->ctx) {
-        (void) rpc->ctx;
-        goto sdtp_data_packet_error;
-        // TODO: rpc_handoff = 
-    } else {
-        rpc_handoff = !(atomic_load_32(&rpc->flags_atomic) & RPC_PKTS_READY);
-        sdtp_rpc_debug(rpc, "should handoff? %d", rpc_handoff);
-    }
-
-    if (rpc_handoff) {
-        atomic_set_32(&rpc->flags_atomic, RPC_PKTS_READY);
-        mtx_lock_spin(&pcb->spinlock);
-        sdtp_handoff_rpc(rpc);
-        mtx_unlock_spin(&pcb->spinlock);
+        if (!(atomic_load_32(&rpc->flags_atomic) & RPC_PKTS_READY)) {
+            atomic_set_32(&rpc->flags_atomic, RPC_PKTS_READY);
+            mtx_lock_spin(&pcb->spinlock);
+            sdtp_handoff_rpc(pcb, rpc);
+            mtx_unlock_spin(&pcb->spinlock);
+        }
     }
 
     if (rpc->msgin.scheduled) {
-		(void) rpc;
         // TODO: homa_check_grantable(homa, rpc);
     }
 
     if (ntohs(header->cutoff_version_be) != sdtp->cutoff_version) {
-        (void) rpc;
         //TODO: The sender has out-of-date cutoffs
     }
 
-    return incoming_delta;
+    return true;
 
 sdtp_data_packet_error:
-    sdtp_free_mbuf(m);
-    return incoming_delta;
+    return false;
 }
 
 int
@@ -670,12 +683,69 @@ sdtp_reap_rpc_release:
     return !checked_all_rpcs;
 }
 
-/* return either 0 if the buffer is not consumed, otherwise 1 */
-bool
+SDTP_STATIC struct sdtp_expected_rpc_ptr
+sdtp_get_rpc(struct mbuf *m, struct sdtp_inpcb *pcb, struct sdtp_common_header *header, struct in6_addr *source)
+{
+    KASSERT(m != NULL, ("m must be valid"));
+    MBUF_LEN_ASSERT(m, struct sdtp_common_header);
+    VALID_PCB_ASSERT(pcb);
+    KASSERT(header != NULL, ("header must be valid"));
+    KASSERT(source != NULL, ("source must be valid"));
+
+    uint64_t id = sdtp_local_id(header->sender_id_be);
+    bool is_client = sdtp_is_client(id);
+    struct sdtp_rpc *rpc;
+    struct sdtp_expected_rpc_ptr expected_rpc;
+
+    sdtp_header_debug(header, "id: %x, is_client: %d", id, sdtp_is_client(id));
+
+    if (!is_client && header->type == SDTP_DATA) {
+        /* We are the RPC server and it's a DATA packet */
+        expected_rpc = sdtp_new_server_rpc(pcb, source, mtod(m, struct sdtp_data_header *));
+        if (!SDTP_IS_ERROR(expected_rpc) && SDTP_GET_VAL(expected_rpc) != NULL) {
+            VALID_RPC_ASSERT(SDTP_GET_VAL(expected_rpc));
+            RPC_LOCK_OWNED(SDTP_GET_VAL(expected_rpc));
+        }
+        return expected_rpc;
+    }
+
+    rpc = is_client ? sdtp_find_client_rpc(pcb, id)
+                    : sdtp_find_server_rpc(pcb, source, ntohs(header->sport_be), id);
+    if (rpc) {
+        VALID_RPC_ASSERT(rpc);
+        RPC_LOCK_OWNED(rpc);
+    }
+    return SDTP_MAKE_EXPECTED(struct sdtp_expected_rpc_ptr, rpc);
+}
+
+SDTP_STATIC bool
+sdtp_preprocess_rpc(struct sdtp_rpc *rpc, struct sdtp_common_header *header)
+{
+    KASSERT(header != NULL, ("header must be valid"));
+
+    if (rpc) {
+        VALID_RPC_ASSERT(rpc);
+        RPC_LOCK_OWNED(rpc);
+
+        if (header->type == SDTP_DATA || header->type == SDTP_GRANT || header->type == SDTP_BUSY) {
+            rpc->silent_ticks = 0;
+        }
+        rpc->peer->outstanding_resends = 0; 
+        return true;
+
+    } else if (header->type != SDTP_CUTOFFS && header->type != SDTP_NEED_ACK
+        && header->type != SDTP_ACK && header->type != SDTP_RESEND) {
+
+        return false;
+    }
+
+    return true;
+}
+
+void
 sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *pcb)
 {
-    // TODO: For now without sdtp_lock_cache, I lock the rpc lock
-
+    KASSERT(m != NULL, ("m must be valid"));
     MBUF_LEN_ASSERT(m, struct sdtp_common_header);
     KASSERT(m->m_flags & M_PKTHDR, ("mbuf must be a header mbuf"));
     VALID_PCB_ASSERT(pcb);
@@ -685,79 +755,42 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
 
     KASSERT(header->type >= SDTP_DATA && header->type <= SDTP_ACK, ("header type must be valid (%#x)", header->type));
     KASSERT(m->m_pkthdr.len >= sdtp_header_lengths[header->type - SDTP_DATA], ("mbuf must be at least the size of its type header"));
+    KASSERT(m->m_len >= sdtp_header_lengths[header->type - SDTP_DATA], ("mbuf must contain its type header"));
 
-    int error = 0, buf_consumed = 0;
-    uint64_t id = sdtp_local_id(header->sender_id_be);
-    struct sdtp *sdtp = pcb->sdtp;
     struct sdtp_rpc *rpc;
+    struct sdtp_expected_rpc_ptr expected_rpc;
 
-    m = m_pullup(m, sdtp_header_lengths[header->type - SDTP_DATA]);
-    if (!m) {
+    expected_rpc = sdtp_get_rpc(m, pcb, header, source);
+    if (SDTP_IS_ERROR(expected_rpc)) {
         goto sdtp_handle_packet_error;
     }
+    rpc = SDTP_GET_VAL(expected_rpc);
 
-    header = mtod(m, struct sdtp_common_header *);
-    sdtp_header_debug(header, "id: %x, is_client: %d", id, sdtp_is_client(id));
-
-    if (!sdtp_is_client(id)) {
-        if (header->type == SDTP_DATA) {
-            m = m_pullup(m, sizeof(struct sdtp_data_header));
-            if (!m) {
-                goto sdtp_handle_packet_error;
-            }
-            struct sdtp_data_header *data_header = mtod(m, struct sdtp_data_header *);
-            if (ntohl(data_header->data_segment.offset_be) == -1) {
-                data_header->data_segment.offset_be = data_header->common.sequence_be;
-            }
-
-            rpc = sdtp_new_server_rpc(pcb, source, data_header, &error);
-            if (error) {
-                rpc = NULL;
-                goto sdtp_handle_packet_error;
-            }
-        } else {
-            rpc = sdtp_find_server_rpc(pcb, source, ntohs(header->sport_be), id);
-        }
-    } else {
-        rpc = sdtp_find_client_rpc(pcb, id);
-    }
-
-    if (!rpc) {
-        if (header->type != SDTP_CUTOFFS && header->type != SDTP_NEED_ACK
-            && header->type != SDTP_ACK && header->type != SDTP_RESEND) {
-            goto sdtp_handle_packet_error;
-        }
-    } else {
-        if (header->type == SDTP_DATA || header->type == SDTP_GRANT || header->type == SDTP_BUSY) {
-            rpc->silent_ticks = 0; 
-        }
-        rpc->peer->outstanding_resends = 0; 
-
-        // TODO: implement frozen
+    if (!sdtp_preprocess_rpc(rpc, header)) {
+        goto sdtp_handle_packet_error;
     }
 
     switch (header->type) {
     case SDTP_DATA: {
-        int incoming_delta = sdtp_data_packet(m, rpc, pcb, source);
-        atomic_add_64(&sdtp->total_incoming_atomic, incoming_delta);
-
+        bool consumed = sdtp_data_packet(pcb->sdtp, m, rpc, pcb, source);
         sdtp_rpc_unlock(rpc);
+        if (!consumed) {
+                sdtp_free_mbuf(m);
+        }
         if (pcb->dead_bufs >= 2 * pcb->sdtp->dead_buffs_limit) {
             sdtp_rpc_reap(pcb, /* reap_all */ false);
         }
-        buf_consumed = true;
         break;
     }
 
     case SDTP_CUTOFFS: {
-        struct sdtp_cutoffs_header *cutoffs_header;
-
-        cutoffs_header = mtod(m, struct sdtp_cutoffs_header *);
+        /* TODO: temporary solution */
+        struct sdtp_cutoffs_header *cutoffs_header = mtod(m, struct sdtp_cutoffs_header *);
         if (rpc) {
             rpc->peer->cutoff_version_be = cutoffs_header->cutoff_version_be;
             sdtp_rpc_unlock(rpc);
         }
-        buf_consumed = false;
+        sdtp_free_mbuf(m);
         break;
     }
 
@@ -771,7 +804,7 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
         if (rpc) {
             sdtp_rpc_unlock(rpc);
         }
-        buf_consumed = false;
+        sdtp_free_mbuf(m);
         break;
 
     default:
@@ -782,10 +815,10 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
     if (rpc) {
         RPC_LOCK_NOTOWNED(rpc);
     }
-    return buf_consumed;
+    return;
 
 sdtp_handle_packet_error:
-    return false;
+    sdtp_free_mbuf(m);
 }
 
 void
