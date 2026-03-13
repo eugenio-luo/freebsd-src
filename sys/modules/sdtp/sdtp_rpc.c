@@ -255,41 +255,21 @@ sdtp_new_client_rpc_error:
     return NULL;
 }
 
-static struct sdtp_rpc *
-sdtp_new_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, struct sdtp_data_header *header, int *error)
+SDTP_STATIC inline void
+sdtp_set_header_offset(struct sdtp_data_header *header)
 {
-    *error = 0;
-    uint64_t id = sdtp_local_id(header->common.sender_id_be);
-    struct sdtp_rpc_bucket *bucket = sdtp_server_rpc_bucket(pcb, id);
-    struct sdtp_rpc *rpc = sdtp_find_server_rpc(pcb, source, ntohs(header->common.sport_be), id);
-
-    if (rpc) {
-        sdtp_pcb_debug(pcb, "no need for new rpc, found old one");
-        return rpc;
-    }
-
-    sdtp_pcb_debug(pcb, "creating new server rpc");
-
-    rpc = SDTP_ZONE_GET(zones.sdtp_zone_rpc, struct sdtp_rpc);
-    if (!rpc) {
-        *error = ENOMEM;
-        sdtp_pcb_debug(pcb, "not enough memory for new server rpc");
-        goto sdtp_new_server_rpc_error;
-    }
-
     if (ntohl(header->data_segment.offset_be) == -1) {
         header->data_segment.offset_be = header->common.sequence_be;
     }
+}
 
+static void
+sdtp_init_server_rpc_fields(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc, struct sdtp_data_header *header, uint64_t id)
+{
     rpc->sdtpcb = pcb;
     rpc->state = SDTP_RPC_INCOMING;
     atomic_store_32(&rpc->flags_atomic, 0);
     atomic_store_32(&rpc->grants_in_progress_atomic, 0);
-    rpc->peer = sdtp_find_peer(&pcb->sdtp->peers, source, &pcb->inp, error);
-    if (*error != 0) {
-        sdtp_pcb_debug(pcb, "new server rpc can't find peer");
-        goto sdtp_new_server_rpc_error;
-    }
     rpc->dport = ntohs(header->common.sport_be);
     rpc->id = id;
     rpc->completion_cookie = 0;
@@ -312,16 +292,12 @@ sdtp_new_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, struct sdtp
 	rpc->done_timer_ticks = 0;
 	rpc->magic = SDTP_RPC_MAGIC;
 	rpc->start_cycles = get_cyclecount();
+}
 
-    mtx_lock_spin(&pcb->spinlock);
-    if (pcb->shutdown) {
-        mtx_unlock_spin(&pcb->spinlock);
-        *error = ESHUTDOWN;
-        goto sdtp_new_server_rpc_error;
-    }
-
-    // TODO: HomaLS context initialization
-    // rpc->ctx = set_rpc_context();
+static void
+sdtp_lock_rpc_and_insert_pcb_list(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc, uint64_t id)
+{
+    struct sdtp_rpc_bucket *bucket = sdtp_server_rpc_bucket(pcb, id);
 
     SDTP_QUEUE_LOCK(&pcb->active_rpcs);
     SDTP_LIST_LOCK(&bucket->rpcs);
@@ -329,6 +305,49 @@ sdtp_new_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, struct sdtp
     SDTP_LIST_INSERT_HEAD_LOCKED(&bucket->rpcs, rpc, hash_links);
     SDTP_QUEUE_INSERT_TAIL_LOCKED(&pcb->active_rpcs, rpc, active_links);
     SDTP_QUEUE_UNLOCK(&pcb->active_rpcs);
+}
+
+SDTP_STATIC struct sdtp_expected_rpc_ptr
+sdtp_new_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, struct sdtp_data_header *header)
+{
+    int error = 0;
+    uint64_t id = sdtp_local_id(header->common.sender_id_be);
+    struct sdtp_rpc *rpc = sdtp_find_server_rpc(pcb, source, ntohs(header->common.sport_be), id);
+
+    if (rpc) {
+        sdtp_pcb_debug(pcb, "no need for new rpc, found old one");
+        return SDTP_MAKE_EXPECTED(struct sdtp_expected_rpc_ptr, rpc);
+    }
+
+    sdtp_pcb_debug(pcb, "creating new server rpc");
+
+    rpc = SDTP_ZONE_GET(zones.sdtp_zone_rpc, struct sdtp_rpc);
+    if (!rpc) {
+        error = ENOMEM;
+        sdtp_pcb_debug(pcb, "not enough memory for new server rpc");
+        goto sdtp_new_server_rpc_error;
+    }
+
+    mtx_lock_spin(&pcb->spinlock);
+    if (pcb->shutdown) {
+        mtx_unlock_spin(&pcb->spinlock);
+        error = ESHUTDOWN;
+        goto sdtp_new_server_rpc_error;
+    }
+
+    sdtp_set_header_offset(header);
+    sdtp_init_server_rpc_fields(pcb, rpc, header, id);
+    rpc->peer = sdtp_find_peer(&pcb->sdtp->peers, source, &pcb->inp, &error);
+    if (error != 0) {
+        sdtp_pcb_debug(pcb, "new server rpc can't find peer");
+        goto sdtp_new_server_rpc_error;
+    }
+
+    // TODO: HomaLS context initialization
+    // rpc->ctx = set_rpc_context();
+
+    sdtp_lock_rpc_and_insert_pcb_list(pcb, rpc, id);
+
     if (!rpc->ctx) {
         if (ntohl(header->data_segment.offset_be) == 0) {
             atomic_set_32(&rpc->flags_atomic, RPC_PKTS_READY);
@@ -337,14 +356,14 @@ sdtp_new_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, struct sdtp
     }
 
     mtx_unlock_spin(&pcb->spinlock);
-    return rpc;
+    return SDTP_MAKE_EXPECTED(struct sdtp_expected_rpc_ptr, rpc);
 
 sdtp_new_server_rpc_error:
     // TODO: free peer
     if (rpc) {
         SDTP_ZONE_FREE(zones.sdtp_zone_rpc, rpc);
     }
-    return NULL;
+    return SDTP_MAKE_UNEXPECTED(struct sdtp_expected_rpc_ptr, error);
 }
 
 static void
