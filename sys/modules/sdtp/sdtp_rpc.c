@@ -387,7 +387,7 @@ sdtp_message_in_init(struct sdtp_message_in *msgin, int length, int incoming)
 	msgin->num_bpages = 0;
 }
 
-static void
+static bool
 sdtp_add_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_data_header *header)
 {
     KASSERT(m != NULL, ("m must be valid"));
@@ -424,11 +424,8 @@ sdtp_add_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_data_header *h
     }
 
     if ((offset < floor) || (offset + data_bytes > ceiling)) {
-        // TODO:: free shouldn't be called while holding locks
-        // maybe just save them and free'd them at the end
-        sdtp_free_mbuf(m);
         sdtp_rpc_debug(rpc, "drop packet");
-        return;
+        return false;
     }
 
     if (header->retransmit) {
@@ -447,6 +444,7 @@ sdtp_add_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_data_header *h
     rpc->msgin.bytes_remaining -= data_bytes;
     rpc->msgin.num_bufs++;
     sdtp_rpc_debug(rpc, "new packet added");
+    return true;
 }
 
 static void
@@ -513,7 +511,7 @@ sdtp_prepare_rpc_for_data(struct sdtp_rpc *rpc)
     return true;
 }
 
-static void
+static bool
 sdtp_data_packet(struct sdtp *sdtp, struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_inpcb *pcb, struct in6_addr *source)
 {
     KASSERT(sdtp != NULL, ("sdtp must be valid"));
@@ -546,7 +544,9 @@ sdtp_data_packet(struct sdtp *sdtp, struct mbuf *m, struct sdtp_rpc *rpc, struct
         // TODO: sdtp_add_packet() and handoff() 
         goto sdtp_data_packet_error;
     } else {
-        sdtp_add_packet(m, rpc, header);
+        if (!sdtp_add_packet(m, rpc, header)) {
+            goto sdtp_data_packet_error;
+        }
 
         if (!(atomic_load_32(&rpc->flags_atomic) & RPC_PKTS_READY)) {
             atomic_set_32(&rpc->flags_atomic, RPC_PKTS_READY);
@@ -564,10 +564,10 @@ sdtp_data_packet(struct sdtp *sdtp, struct mbuf *m, struct sdtp_rpc *rpc, struct
         //TODO: The sender has out-of-date cutoffs
     }
 
-    return;
+    return true;
 
 sdtp_data_packet_error:
-    sdtp_free_mbuf(m);
+    return false;
 }
 
 int
@@ -773,8 +773,11 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
 
     switch (header->type) {
     case SDTP_DATA: {
-        sdtp_data_packet(pcb->sdtp, m, rpc, pcb, source);
+        bool consumed = sdtp_data_packet(pcb->sdtp, m, rpc, pcb, source);
         sdtp_rpc_unlock(rpc);
+        if (!consumed) {
+                sdtp_free_mbuf(m);
+        }
         if (pcb->dead_bufs >= 2 * pcb->sdtp->dead_buffs_limit) {
             sdtp_rpc_reap(pcb, /* reap_all */ false);
         }
