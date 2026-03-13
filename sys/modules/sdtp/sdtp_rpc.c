@@ -328,18 +328,18 @@ sdtp_new_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, struct sdtp
         goto sdtp_new_server_rpc_error;
     }
 
-    mtx_lock_spin(&pcb->spinlock);
-    if (pcb->shutdown) {
-        mtx_unlock_spin(&pcb->spinlock);
-        error = ESHUTDOWN;
-        goto sdtp_new_server_rpc_error;
-    }
-
     sdtp_set_header_offset(header);
     sdtp_init_server_rpc_fields(pcb, rpc, header, id);
     rpc->peer = sdtp_find_peer(&pcb->sdtp->peers, source, &pcb->inp, &error);
     if (error != 0) {
         sdtp_pcb_debug(pcb, "new server rpc can't find peer");
+        goto sdtp_new_server_rpc_error;
+    }
+
+    mtx_lock_spin(&pcb->spinlock);
+    if (pcb->shutdown) {
+        mtx_unlock_spin(&pcb->spinlock);
+        error = ESHUTDOWN;
         goto sdtp_new_server_rpc_error;
     }
 
