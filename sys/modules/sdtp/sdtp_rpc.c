@@ -480,12 +480,12 @@ sdtp_rpc_acked(struct sdtp_inpcb *pcb, struct in6_addr *source_addr, uint16_t so
 
 /*
  * sdtp_data_packet()
- *
- * rpc need to be locked
  */
-static int 
-sdtp_data_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_inpcb *pcb, struct in6_addr *source)
+static void
+sdtp_data_packet(struct sdtp *sdtp, struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_inpcb *pcb, struct in6_addr *source)
 {
+    KASSERT(sdtp != NULL, ("sdtp must be valid"));
+
     RPC_LOCK_OWNED(rpc);
 
     MBUF_LEN_ASSERT(m, struct sdtp_data_header);
@@ -493,15 +493,11 @@ sdtp_data_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_inpcb *pcb, s
     VALID_RPC_ASSERT(rpc);
 
     struct sdtp_data_header *header = mtod(m, struct sdtp_data_header *);
-    struct sdtp *sdtp = pcb->sdtp;
     bool rpc_handoff = false;
-    int old_remaining, incoming_delta = 0;
 
     sdtp_data_header_debug(header, NULL);
 
-    if (ntohl(header->data_segment.offset_be) == -1) {
-        header->data_segment.offset_be = header->common.sequence_be;
-    }
+    sdtp_set_header_offset(header);
 
     if (header->ack.client_id_be > 0) {
         sdtp_rpc_unlock(rpc);
@@ -528,15 +524,12 @@ sdtp_data_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_inpcb *pcb, s
 
     if (rpc->msgin.total_length < 0) {
         sdtp_message_in_init(&rpc->msgin, ntohl(header->message_length_be), ntohl(header->incoming_be));
-        incoming_delta += rpc->msgin.incoming;
-
         if (rpc->ctx) {
 		    /* TODO: Set sdtp_max_pkt_data for first data packet */
             (void) rpc->ctx;
         }
     }
 
-    old_remaining = rpc->msgin.bytes_remaining;
     if (rpc->ctx) {
         // TODO: sdtp_add_packet()
         (void) rpc->ctx;
@@ -545,7 +538,6 @@ sdtp_data_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_inpcb *pcb, s
         (void) rpc->ctx;
         sdtp_add_packet(m, rpc, header);
     }
-    incoming_delta -= old_remaining - rpc->msgin.bytes_remaining;
 
     if (rpc->ctx) {
         (void) rpc->ctx;
@@ -573,11 +565,10 @@ sdtp_data_packet(struct mbuf *m, struct sdtp_rpc *rpc, struct sdtp_inpcb *pcb, s
         //TODO: The sender has out-of-date cutoffs
     }
 
-    return incoming_delta;
+    return;
 
 sdtp_data_packet_error:
     sdtp_free_mbuf(m);
-    return incoming_delta;
 }
 
 int
@@ -784,7 +775,7 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
 
     switch (header->type) {
     case SDTP_DATA: {
-        sdtp_data_packet(m, rpc, pcb, source);
+        sdtp_data_packet(pcb->sdtp, m, rpc, pcb, source);
         sdtp_rpc_unlock(rpc);
         if (pcb->dead_bufs >= 2 * pcb->sdtp->dead_buffs_limit) {
             sdtp_rpc_reap(pcb, /* reap_all */ false);
