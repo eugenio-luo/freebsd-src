@@ -184,7 +184,7 @@ static inline int sdtp_port_hash(uint16_t port)
 }
 
 int sdtp_init(struct sdtp *sdtp);
-int sdtp_uninit(struct sdtp *sdtp);
+int sdtp_exit(struct sdtp *sdtp);
 void sdtp_interest_init(struct sdtp_interest *interest);
 
 struct sdtp_packet_tailq_entry *sdtp_alloc_packet_tailq_entry(void);

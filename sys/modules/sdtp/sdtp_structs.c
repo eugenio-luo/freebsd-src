@@ -254,11 +254,12 @@ sdtp_interest_init(struct sdtp_interest *interest)
 }
 
 // TODO: fix uninit
-int sdtp_uninit(struct sdtp *sdtp)
+int sdtp_exit(struct sdtp *sdtp)
 {
     SDTP_ZONE_DESTROY(zones.sdtp_zone_sock);
     SDTP_ZONE_DESTROY(zones.sdtp_zone_rpc);
     SDTP_ZONE_DESTROY(zones.sdtp_zone_peer);
     SDTP_ZONE_DESTROY(zones.packet_tailq.sdtp_zone_entry);
+    SDTP_ZONE_DESTROY(zones.sdtp_zone_packet_slist_entry);
     return 0;
 }

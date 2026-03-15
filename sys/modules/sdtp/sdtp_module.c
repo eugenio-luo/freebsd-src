@@ -78,7 +78,7 @@ sdtp_module_unload(void)
     int error = 0;
     existing = true;
 
-    //error = sdtp_uninit(sdtp);
+    error = sdtp_exit(sdtp);
 #ifdef INET
 	(void)ipproto_unregister(IPPROTO_SDTP);
 	(void)protosw_unregister(&sdtp_protosw);
