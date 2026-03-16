@@ -742,6 +742,33 @@ sdtp_preprocess_rpc(struct sdtp_rpc *rpc, struct sdtp_common_header *header)
     return true;
 }
 
+static void
+sdtp_ack_packet(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc, struct mbuf *m, struct in6_addr *source)
+{
+    struct sdtp_ack_header *header = mtod(m, struct sdtp_ack_header *);
+    int n = ntohs(header->num_acks_be);
+
+    if (rpc) {
+        SDTP_QUEUE_LOCK(&pcb->active_rpcs);
+        sdtp_rpc_free(rpc);
+        SDTP_QUEUE_UNLOCK(&pcb->active_rpcs);
+    }
+
+    if (n > 0) {
+        if (rpc) {
+            sdtp_rpc_unlock(rpc);
+        }
+
+        for (int i = 0; i < n; ++i) {
+            sdtp_rpc_acked(pcb, source, ntohs(header->common.sport_be), &header->acks[i]);
+        }
+
+        if (rpc) {
+            sdtp_rpc_lock(rpc);
+        }
+    }
+}
+
 void
 sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *pcb)
 {
@@ -794,13 +821,21 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
         break;
     }
 
+    case SDTP_ACK: {
+        sdtp_ack_packet(pcb, rpc, m, source);
+        if (rpc) {
+            sdtp_rpc_unlock(rpc);
+        }
+        sdtp_free_mbuf(m);
+        break;
+    }
+
     case SDTP_GRANT:
     case SDTP_RESEND:
     case SDTP_UNKNOWN:
     case SDTP_BUSY:
     case SDTP_FREEZE:
     case SDTP_NEED_ACK:
-    case SDTP_ACK:
         if (rpc) {
             sdtp_rpc_unlock(rpc);
         }
