@@ -424,7 +424,7 @@ sdtp_send_next_data(struct sdtp_rpc *rpc, bool force)
     struct mbuf *txm;
 
 	atomic_add_int(&rpc->msgout.active_xmits_atomic, 1);
-    while (*rpc->msgout.next_xmit) {
+    while (rpc->msgout.next_xmit && *rpc->msgout.next_xmit) {
         int priority;
         struct mbuf *buf = (*rpc->msgout.next_xmit)->data;
 
