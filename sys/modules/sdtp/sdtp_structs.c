@@ -135,6 +135,36 @@ sdtp_peermap_init(struct sdtp_peermap *peermap)
 }
 
 static int
+sdtp_metrics_init(struct sdtp *sdtp)
+{
+    int err;
+
+    err = sysctl_ctx_init(&sdtp->metrics.sysctl_ctx);
+    if (err != 0) {
+        return err;
+    }
+
+    sdtp->metrics.sysctl_tree = SYSCTL_ADD_NODE(&sdtp->metrics.sysctl_ctx, SYSCTL_STATIC_CHILDREN(_net),
+                            OID_AUTO, "sdtp", CTLFLAG_RD | CTLFLAG_MPSAFE, 0, "SDTP");
+    if (sdtp->metrics.sysctl_tree == NULL) {
+        sysctl_ctx_free(&sdtp->metrics.sysctl_ctx);
+    }
+
+    SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx, SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+                            "send_rpcs", CTLFLAG_RW, &sdtp->metrics.send_rpcs_atomic, 0, "send_rpcs");
+    SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx, SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+                            "send_pkts", CTLFLAG_RW, &sdtp->metrics.send_pkts_atomic, 0, "send_pkts");
+    SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx, SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+                            "recv_rpcs", CTLFLAG_RW, &sdtp->metrics.recv_rpcs_atomic, 0, "recv_rpcs");
+    SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx, SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+                            "recv_pkts", CTLFLAG_RW, &sdtp->metrics.recv_pkts_atomic, 0, "recv_pkts");
+    SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx, SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+                            "recv_rpc_acks", CTLFLAG_RW, &sdtp->metrics.recv_rpc_acks_atomic, 0, "recv_rpc_acks");
+
+    return err;
+}
+
+static int
 sdtp_struct_init(struct sdtp *sdtp)
 {
     int err, i;
@@ -197,26 +227,23 @@ sdtp_struct_init(struct sdtp *sdtp)
     // TODO: pacer thread initialization 
 
     sdtp->pacer_exit = false;
-	sdtp->max_nic_queue_ns = 2000;
-	sdtp->cycles_per_kbyte = 0;
-	sdtp->verbose = 0;
-	sdtp->max_gso_size = 10000;
-	sdtp->max_gro_skbs = 20;
-	sdtp->gso_force_software = 0;
-	sdtp->gro_policy = SDTP_GRO_NORMAL;
-	sdtp->gro_busy_usecs = 10;
-	sdtp->timer_ticks = 0;
-	mtx_init(&sdtp->metrics_spinlock, "sdtp metrics spinlock", NULL, MTX_SPIN);
-	sdtp->metrics = NULL;
-	sdtp->metrics_capacity = 0;
-	sdtp->metrics_length = 0;
-	sdtp->metrics_active_opens = 0;
-	sdtp->flags = 0;
-	sdtp->freeze_type = 0;
-	sdtp->sync_freeze = 0;
-	sdtp->bpage_lease_usecs = 10000;
-	sdtp->hardware_state_threshold = 1;
-	strncpy(sdtp->hardware_interface, "enp1s0f0np0", sizeof(sdtp->hardware_interface) - 1);
+    sdtp->max_nic_queue_ns = 2000;
+    sdtp->cycles_per_kbyte = 0;
+    sdtp->verbose = 0;
+    sdtp->max_gso_size = 10000;
+    sdtp->max_gro_skbs = 20;
+    sdtp->gso_force_software = 0;
+    sdtp->gro_policy = SDTP_GRO_NORMAL;
+    sdtp->gro_busy_usecs = 10;
+    sdtp->timer_ticks = 0;
+    sdtp->flags = 0;
+    sdtp->freeze_type = 0;
+    sdtp->sync_freeze = 0;
+    sdtp->bpage_lease_usecs = 10000;
+    sdtp->hardware_state_threshold = 1;
+    strncpy(sdtp->hardware_interface, "enp1s0f0np0", sizeof(sdtp->hardware_interface) - 1);
+
+    err = sdtp_metrics_init(sdtp);
 
     return err;
 }
@@ -261,5 +288,8 @@ int sdtp_exit(struct sdtp *sdtp)
     SDTP_ZONE_DESTROY(zones.sdtp_zone_peer);
     SDTP_ZONE_DESTROY(zones.packet_tailq.sdtp_zone_entry);
     SDTP_ZONE_DESTROY(zones.sdtp_zone_packet_slist_entry);
+
+    sysctl_ctx_free(&sdtp->metrics.sysctl_ctx);
+
     return 0;
 }

@@ -48,7 +48,9 @@ sdtp_peer_ack(struct sdtp_rpc *rpc)
     if (peer->num_acks < NUM_PEER_UNACKED_IDS) {
         peer->acks[peer->num_acks].client_id_be = htobe64(rpc->id);
         peer->acks[peer->num_acks].server_port_be = htons(rpc->dport);
+        sdtp_rpc_debug(rpc, "add ack for id %llx", htobe64(peer->acks[peer->num_acks].client_id_be));
         ++peer->num_acks;
+        atomic_add_64(&rpc->sdtpcb->sdtp->metrics.recv_rpc_acks_atomic, 1);
         sdtp_peer_unlock(peer);
         return;
     }
@@ -57,9 +59,11 @@ sdtp_peer_ack(struct sdtp_rpc *rpc)
     ack_header.num_acks_be = htons(peer->num_acks);
     peer->num_acks = 0;
     sdtp_peer_unlock(peer);
+    atomic_add_64(&rpc->sdtpcb->sdtp->metrics.recv_rpc_acks_atomic, 1);
 
     // TODO: can I really drop this lock? It is a bit dangerous
     sdtp_rpc_unlock(rpc);
+    sdtp_rpc_debug(rpc, "send ack");
     sdtp_send_control(rpc, SDTP_ACK, &ack_header, sizeof(ack_header));
     sdtp_rpc_lock(rpc);
 }

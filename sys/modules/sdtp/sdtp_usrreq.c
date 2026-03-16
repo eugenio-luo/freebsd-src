@@ -355,6 +355,7 @@ sdtp_wait_for_message_found_rpc:
             atomic_clear_32(&rpc->flags_atomic, RPC_PKTS_READY);
 
             if (rpc->msgin.copied_out == rpc->msgin.total_length) {
+                atomic_add_64(&rpc->sdtpcb->sdtp->metrics.recv_rpcs_atomic, 1);
                 goto sdtp_wait_for_message_done;
             }
             sdtp_rpc_unlock(rpc);

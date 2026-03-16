@@ -18,6 +18,9 @@
 #include <sys/socket.h>
 #include <sys/domain.h>
 #include <sys/cdefs.h>
+#include <sys/kernel.h>
+#include <sys/module.h>
+#include <sys/sysctl.h>
 
 #include <netinet/in.h>
 
@@ -39,8 +42,17 @@ struct sdtp_core {
     int held_bucket;
     struct thread *thread;
     uint64_t syscall_end_time;
+};
 
-    // struct homa_metrics metrics;
+struct sdtp_metrics {
+    struct sysctl_ctx_list sysctl_ctx;
+    struct sysctl_oid *sysctl_tree;
+
+    uint64_t send_rpcs_atomic;
+    uint64_t send_pkts_atomic;
+    uint64_t recv_rpcs_atomic;
+    uint64_t recv_pkts_atomic;
+    uint64_t recv_rpc_acks_atomic;
 };
 
 struct sdtp_dead_dst {
@@ -134,10 +146,7 @@ struct sdtp {
     int gro_busy_cycles;
     uint32_t timer_ticks;
 
-    struct mtx metrics_spinlock;
-    char *metrics;
-    size_t metrics_capacity;
-    size_t metrics_length;
+    struct sdtp_metrics metrics;
 
     int metrics_active_opens;
 	int flags;
