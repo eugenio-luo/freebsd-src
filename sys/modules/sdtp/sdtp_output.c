@@ -203,6 +203,7 @@ sdtp_create_packet_mbuf(struct sdtp_rpc *rpc, struct uio *uio, int m_size, int o
 
     m = m_gethdr(M_NOWAIT, MT_DATA);
     if (!m) {
+        sdtp_rpc_debug(rpc, "no header packet left in mbufs zone");
         res.result = -ENOMEM;
         goto sdtp_create_packet_mbuf_error;
     }
@@ -218,6 +219,7 @@ sdtp_create_packet_mbuf(struct sdtp_rpc *rpc, struct uio *uio, int m_size, int o
 
         tmp->m_next = m_get(M_NOWAIT, MT_DATA);
         if (!tmp->m_next) {
+        sdtp_rpc_debug(rpc, "no packet lef in mbufs zone");
             res.result = -ENOMEM;
             goto sdtp_create_packet_mbuf_error;
         }
@@ -285,6 +287,8 @@ sdtp_fill_packets_slist(struct sdtp_rpc *rpc, struct uio *uio, int max_packet_si
     int bytes_left, offset = 0, error = 0;
     struct sdtp_packet_slist_entry *prev = NULL;
 
+    sdtp_rpc_debug(rpc, "total message length to send: %d", rpc->msgout.length);
+
     for (bytes_left = rpc->msgout.length; bytes_left > 0;) {
         struct packet_mbuf_result res;
         struct sdtp_packet_slist_entry *entry;
@@ -332,7 +336,6 @@ sdtp_fill_packets_slist(struct sdtp_rpc *rpc, struct uio *uio, int max_packet_si
     return 0;
 
 sdtp_fill_packets_slist_error:
-    // TODO: we should free packets here
     sdtp_rpc_lock(rpc);
     return error;
 }
