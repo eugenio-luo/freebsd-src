@@ -620,6 +620,8 @@ sdtp_rpc_reap(struct sdtp_inpcb *pcb, bool reap_all)
                 continue;
             }
 
+            sdtp_rpc_lock(rpc);
+
             rpc->magic = 0;
             rpc->state = 0;
             if (rpc->msgout.length >= 0) {
@@ -629,6 +631,7 @@ sdtp_rpc_reap(struct sdtp_inpcb *pcb, bool reap_all)
                     ++num_out_pkts;
                     --rpc->msgout.num_bufs;
                     if (num_out_pkts >= batch_size) {
+                        sdtp_rpc_unlock(rpc);
                         goto sdtp_reap_rpc_release;
                     }
                 }
@@ -641,6 +644,7 @@ sdtp_rpc_reap(struct sdtp_inpcb *pcb, bool reap_all)
                     ++num_in_pkts;
                     --rpc->msgin.num_bufs;
                     if (num_in_pkts >= batch_size) {
+                        sdtp_rpc_unlock(rpc);
                         goto sdtp_reap_rpc_release;
                     }
                 }
@@ -650,8 +654,11 @@ sdtp_rpc_reap(struct sdtp_inpcb *pcb, bool reap_all)
             ++num_rpcs;
             SDTP_QUEUE_REMOVE_LOCKED(&pcb->dead_rpcs, rpc, dead_links);
             if (num_rpcs >= batch_size) {
+                sdtp_rpc_unlock(rpc);
                 goto sdtp_reap_rpc_release;
             }
+
+            sdtp_rpc_unlock(rpc);
         }
         checked_all_rpcs = true;
 
