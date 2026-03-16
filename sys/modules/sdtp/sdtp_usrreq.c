@@ -330,6 +330,7 @@ sdtp_wait_for_message_found_rpc:
         }
 
         rpc = (struct sdtp_rpc *) atomic_load_ptr(&interest.ready_rpc_atomic);
+        sdtp_pcb_debug(pcb, "new rpc after waking: %llu", (uintptr_t)rpc);
         if (rpc) {
             if (!atomic_load_int(&interest.locked_atomic)) {
                 sdtp_rpc_lock(rpc);
@@ -337,6 +338,7 @@ sdtp_wait_for_message_found_rpc:
             atomic_clear_32(&rpc->flags_atomic, RPC_HANDING_OFF);
             if (rpc->state == SDTP_RPC_DEAD) {
                 sdtp_rpc_unlock(rpc);
+                sdtp_pcb_debug(pcb, "dead RPC");
                 continue;
             }
 
@@ -345,6 +347,7 @@ sdtp_wait_for_message_found_rpc:
                     (void) rpc->ctx;
                     // TODO: homals_copy_to_user
                 } else {
+                    sdtp_pcb_debug(pcb, "copy to user");
                     rpc->error = sdtp_copy_to_user(uio, rpc);
                 }
             }
@@ -354,6 +357,7 @@ sdtp_wait_for_message_found_rpc:
 
             atomic_clear_32(&rpc->flags_atomic, RPC_PKTS_READY);
 
+            sdtp_rpc_debug(rpc, "rpc->msgin.copied_out: %d, rpc->msgin.total_length: %d", rpc->msgin.copied_out, rpc->msgin.total_length);
             if (rpc->msgin.copied_out == rpc->msgin.total_length) {
                 atomic_add_64(&rpc->sdtpcb->sdtp->metrics.recv_rpcs_atomic, 1);
                 goto sdtp_wait_for_message_done;
