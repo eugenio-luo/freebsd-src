@@ -305,6 +305,12 @@ sdtp_fill_packets_slist(struct sdtp_rpc *rpc, struct uio *uio, int max_packet_si
 
         entry = SDTP_ZONE_GET(zones.sdtp_zone_packet_slist_entry,
                               struct sdtp_packet_slist_entry);
+        if (entry == NULL) {
+            sdtp_rpc_debug(rpc, "no entry left in zones.sdtp_zone_packet_slist_entry");
+            sdtp_free_mbuf(res.buf);
+            error = -ENOBUFS;
+            goto sdtp_fill_packets_slist_error;
+        }
         entry->data = res.buf;
         KASSERT(!(entry->data->m_flags & M_EXT), ("buf must not have external storage"));
         KASSERT(entry->data->m_pkthdr.len <= max_packet_size + IP_SDTP_HEADER_SIZE(rpc->sdtpcb, struct sdtp_data_header),
