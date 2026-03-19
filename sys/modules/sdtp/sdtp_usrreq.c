@@ -215,6 +215,8 @@ sdtp_copy_to_user_copy:
             uiomove(mtod(buf, char *) + sizeof(*header), buf->m_len - sizeof(*header), uio);
                 sdtp_rpc_debug(rpc, "copying %d length to userspace", buf->m_len - sizeof(*header));
 
+            sdtp_rpc_debug(rpc, "copying %d length to userspace", buf->m_len - sizeof(*header));
+
             struct mbuf *m = buf->m_next;
             for (; m != NULL && uio->uio_resid > 0 && rem > 0; m = m->m_next) {
                 int len = min(m->m_len, uio->uio_resid);
@@ -231,6 +233,7 @@ sdtp_copy_to_user_copy:
             if (error) {
                 continue;
             }
+            SDTP_METRIC(rpc->sdtpcb, recv_pkts_atomic, 1);
         }
 
         for (i = 0; i < n; ++i) {
@@ -363,7 +366,7 @@ sdtp_wait_for_message_found_rpc:
 
             sdtp_rpc_debug(rpc, "rpc->msgin.copied_out: %d, rpc->msgin.total_length: %d", rpc->msgin.copied_out, rpc->msgin.total_length);
             if (rpc->msgin.copied_out == rpc->msgin.total_length) {
-                atomic_add_64(&rpc->sdtpcb->sdtp->metrics.recv_rpcs_atomic, 1);
+                SDTP_METRIC(rpc->sdtpcb, recv_rpcs_atomic, 1);
                 goto sdtp_wait_for_message_done;
             }
             sdtp_rpc_put(rpc);

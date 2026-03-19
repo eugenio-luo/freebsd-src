@@ -199,4 +199,9 @@ void sdtp_interest_init(struct sdtp_interest *interest);
 struct sdtp_packet_tailq_entry *sdtp_alloc_packet_tailq_entry(void);
 void sdtp_free_packet_tailq_entry(struct sdtp_packet_tailq_entry *entry);
 
+#define SDTP_METRIC(PCB, FIELD, VAL)                       \
+    do {                                                   \
+        atomic_add_64(&((PCB)->sdtp->metrics.FIELD), VAL); \
+    } while(0)
+
 #endif 

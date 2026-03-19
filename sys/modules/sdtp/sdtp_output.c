@@ -412,6 +412,8 @@ sdtp_send_data(struct sdtp_rpc *rpc, struct mbuf *buf, int priority)
         break;
     }
     }
+
+    SDTP_METRIC(rpc->sdtpcb, send_pkts_atomic, 1);
 }
 
 static void
@@ -524,6 +526,8 @@ sdtp_message_out(struct sdtp_rpc *rpc, struct uio *uio, bool immediate_send)
     if (immediate_send) {
         sdtp_send_next_data(rpc, false);
     }
+
+    SDTP_METRIC(rpc->sdtpcb, send_rpcs_atomic, 1);
     return 0;
 
 sdtp_message_out_error:
