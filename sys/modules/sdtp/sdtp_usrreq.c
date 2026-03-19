@@ -701,8 +701,8 @@ sdtp_send_response(struct sdtp_inpcb *pcb,
 
     rpc = sdtp_find_server_rpc(pcb, &addr, port, args->id);
     if (!rpc) {
-        error = EINVAL;
-        goto sdtp_send_response_error;
+        /* valid output */
+        return 0;
     }
     sdtp_rpc_hold(rpc);
 
