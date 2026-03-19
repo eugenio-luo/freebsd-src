@@ -212,8 +212,10 @@ sdtp_copy_to_user_copy:
             }
 
             KASSERT(buf->m_len - sizeof(*header) > 0, ("buf size without header must be positive\n"));
-            uiomove(mtod(buf, char *) + sizeof(*header), buf->m_len - sizeof(*header), uio);
-                sdtp_rpc_debug(rpc, "copying %d length to userspace", buf->m_len - sizeof(*header));
+            error = uiomove(mtod(buf, char *) + sizeof(*header), buf->m_len - sizeof(*header), uio);
+            if (error) {
+                continue;
+            }
 
             sdtp_rpc_debug(rpc, "copying %d length to userspace", buf->m_len - sizeof(*header));
 
