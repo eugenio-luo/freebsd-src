@@ -874,6 +874,8 @@ sdtp_handle_packet_error:
 void
 sdtp_rpc_free(struct sdtp_rpc *rpc)
 {
+    VALID_RPC_ASSERT(rpc);
+
     int delta;
 
     mtx_assert(rpc->spinlock_p, MA_OWNED);
