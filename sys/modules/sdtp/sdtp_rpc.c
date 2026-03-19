@@ -799,14 +799,24 @@ sdtp_ack_packet(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc, struct mbuf *m, st
     }
 }
 
-/* TODO: temporary solution */
 static void
-sdtp_cutoffs_packet(struct mbuf *m, struct sdtp_rpc *rpc)
+sdtp_cutoffs_packet(struct sdtp_inpcb *pcb, struct mbuf *m, struct in6_addr *source)
 {
-    struct sdtp_cutoffs_header *cutoffs_header = mtod(m, struct sdtp_cutoffs_header *);
-    if (rpc) {
-        rpc->peer->cutoff_version_be = cutoffs_header->cutoff_version_be;
+    struct sdtp_cutoffs_header *header = mtod(m, struct sdtp_cutoffs_header *);
+    struct sdtp_peer *peer;
+    int i, error;
+
+    peer = sdtp_find_peer(&pcb->sdtp->peers, source, &pcb->inp, &error);
+    if (peer == NULL) {
+        return;
     }
+
+    peer->unsched_cutoffs[0] = INT_MAX;
+    for (i = 1; i < SDTP_MAX_PRIORITIES; ++i) {
+        peer->unsched_cutoffs[i] = ntohl(header->unsched_cutoffs_be[i]);
+    }
+    // TODO: release peer
+    peer->cutoff_version_be = header->cutoff_version_be;
 }
 
 void
@@ -849,7 +859,7 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
     }
 
     case SDTP_CUTOFFS:
-        sdtp_cutoffs_packet(m, rpc);
+        sdtp_cutoffs_packet(pcb, m, source);
         break;
 
     case SDTP_ACK:
