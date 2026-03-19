@@ -785,6 +785,16 @@ sdtp_ack_packet(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc, struct mbuf *m, st
     }
 }
 
+/* TODO: temporary solution */
+static void
+sdtp_cutoffs_packet(struct mbuf *m, struct sdtp_rpc *rpc)
+{
+    struct sdtp_cutoffs_header *cutoffs_header = mtod(m, struct sdtp_cutoffs_header *);
+    if (rpc) {
+        rpc->peer->cutoff_version_be = cutoffs_header->cutoff_version_be;
+    }
+}
+
 void
 sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *pcb)
 {
