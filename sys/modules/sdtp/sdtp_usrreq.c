@@ -335,9 +335,13 @@ sdtp_wait_for_message_found_rpc:
             if (!atomic_load_int(&interest.locked_atomic)) {
                 sdtp_rpc_lock(rpc);
             }
+            // TODO: I don't this is needed because we already holding
+            // the reference from interest.ready_rpc_atomic?
+            sdtp_rpc_hold(rpc);
             atomic_clear_32(&rpc->flags_atomic, RPC_HANDING_OFF);
             if (rpc->state == SDTP_RPC_DEAD) {
                 sdtp_rpc_unlock(rpc);
+                sdtp_rpc_put(rpc);
                 sdtp_pcb_debug(pcb, "dead RPC");
                 continue;
             }
@@ -362,6 +366,7 @@ sdtp_wait_for_message_found_rpc:
                 atomic_add_64(&rpc->sdtpcb->sdtp->metrics.recv_rpcs_atomic, 1);
                 goto sdtp_wait_for_message_done;
             }
+            sdtp_rpc_put(rpc);
             sdtp_rpc_unlock(rpc);
         }
     }
@@ -498,6 +503,7 @@ sdtp_soreceive_done:
                 SDTP_QUEUE_UNLOCK(&rpc->sdtpcb->active_rpcs);
             }
         }
+        sdtp_rpc_put(rpc);
         sdtp_rpc_unlock(rpc);
     }
     if (control_buf != NULL && res != 0) {
@@ -624,6 +630,7 @@ sdtp_send_request(struct sdtp_inpcb *pcb,
     if (rpc == NULL || error != 0) {
         goto sdtp_send_request_error;
     }
+    sdtp_rpc_hold(rpc);
 
     // TODO: args flags & HOMA_SENDMSG_PRIVATE
 
@@ -633,18 +640,20 @@ sdtp_send_request(struct sdtp_inpcb *pcb,
         goto sdtp_send_request_error;
     }
     args->id = rpc->id;
+    sdtp_rpc_put(rpc);
     sdtp_rpc_unlock(rpc);
-    rpc = NULL;
 
     // copy msg control to user
 
     return 0;
 
 sdtp_send_request_error:
-    if (rpc != NULL) {
+    if (rpc) {
         SDTP_QUEUE_LOCK(&pcb->active_rpcs);
         sdtp_rpc_free(rpc);
         SDTP_QUEUE_UNLOCK(&pcb->active_rpcs);
+
+        sdtp_rpc_put(rpc);
         sdtp_rpc_unlock(rpc);
     }
     return error;
@@ -690,15 +699,16 @@ sdtp_send_response(struct sdtp_inpcb *pcb,
         error = EINVAL;
         goto sdtp_send_response_error;
     }
+    sdtp_rpc_hold(rpc);
+
     if (rpc->error) {
         error = rpc->error;
         goto sdtp_send_response_error;
     }
+
     if (rpc->state != SDTP_RPC_IN_SERVICE) {
-        sdtp_rpc_unlock(rpc);
-        rpc = NULL;
         error = EINVAL;
-        goto sdtp_send_response_error;
+        goto sdtp_send_response_error_no_free_rpc;
     }
 
     sdtp_rpc_debug(rpc, "sending response");
@@ -710,6 +720,7 @@ sdtp_send_response(struct sdtp_inpcb *pcb,
         goto sdtp_send_response_error;
     }
 
+    sdtp_rpc_put(rpc);
     sdtp_rpc_unlock(rpc);
     return 0;
 
@@ -718,6 +729,11 @@ sdtp_send_response_error:
         SDTP_QUEUE_LOCK(&pcb->active_rpcs);
         sdtp_rpc_free(rpc);
         SDTP_QUEUE_UNLOCK(&pcb->active_rpcs);
+    }
+
+sdtp_send_response_error_no_free_rpc:
+    if (rpc != NULL) {
+        sdtp_rpc_put(rpc);
         sdtp_rpc_unlock(rpc);
     }
     return error;

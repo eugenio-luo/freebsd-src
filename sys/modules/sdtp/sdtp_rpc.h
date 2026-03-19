@@ -112,7 +112,9 @@ struct sdtp_rpc {
 
     uint32_t grants_in_progress_atomic;
 
-	struct sdtp_peer *peer;
+    sdtp_ref_t refs;
+
+    struct sdtp_peer *peer;
 
     uint16_t dport;
     uint64_t id;
@@ -148,6 +150,19 @@ struct sdtp_rpc {
 	void *rpc_offload_ctx_tx;
 	void *rpc_offload_ctx_rx;
 };
+
+static inline void
+sdtp_rpc_hold(struct sdtp_rpc *rpc)
+{
+    refcount_acquire(&rpc->refs);
+}
+
+static inline void
+sdtp_rpc_put(struct sdtp_rpc *rpc)
+{
+    KASSERT(refcount_load(&rpc->refs) > 0, ("rpc cannot have negative refs"));
+    refcount_release(&rpc->refs);
+}
 
 static inline void
 insert_ready_rpc(struct sdtp_inpcb *pcb, struct sdtp_rpc_mlist *list, struct sdtp_rpc *rpc)

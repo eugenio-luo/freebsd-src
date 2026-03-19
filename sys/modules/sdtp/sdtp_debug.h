@@ -103,11 +103,11 @@ sdtp_rpc_debug(struct sdtp_rpc *rpc, const char *fmt, ...)
     va_list args;
     int len;
 
-    len = snprintf(buf, sizeof(buf), "RPC %lu [ dport: %d, state: %x, error: %d ]",
+    len = snprintf(buf, sizeof(buf), "RPC %lu [ dport: %d, state: %x, error: %d, refs: %d ]",
            rpc->id, rpc->dport,
            //rpc_flag_to_string(atomic_load_32(&rpc->flags_atomic)),
            atomic_load_32(&rpc->flags_atomic),
-           rpc->error);
+           rpc->error, refcount_load(&rpc->refs));
 
     va_start(args, fmt);
     sdtp_opt_fmt_print(&buf[0], len, fmt, args);

@@ -131,6 +131,7 @@ sdtp_handoff_rpc_waiting:
     atomic_store_32(&interest->locked_atomic, 0);
 
     atomic_store_rel_ptr(&interest->ready_rpc_atomic, (uintptr_t) rpc);
+    sdtp_rpc_hold(rpc);
 
     if (interest->reg_rpc) {
         interest->reg_rpc->interest = NULL;
@@ -228,6 +229,7 @@ sdtp_new_client_rpc(struct sdtp_inpcb *pcb, struct in6_addr *dest, uint16_t port
 	rpc->resend_timer_ticks = pcb->sdtp->timer_ticks;
 	rpc->magic = SDTP_RPC_MAGIC;
 	rpc->start_cycles = get_cyclecount();
+    refcount_init(&rpc->refs, 0);
 
     mtx_lock_spin(&pcb->spinlock);
     if (pcb->shutdown) {
@@ -291,6 +293,7 @@ sdtp_init_server_rpc_fields(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc, struct
 	rpc->done_timer_ticks = 0;
 	rpc->magic = SDTP_RPC_MAGIC;
 	rpc->start_cycles = get_cyclecount();
+    refcount_init(&rpc->refs, 0);
 }
 
 static void
@@ -611,7 +614,7 @@ sdtp_rpc_reap(struct sdtp_inpcb *pcb, bool reap_all)
 
         SDTP_QUEUE_LOCK(&pcb->dead_rpcs);
         SDTP_QUEUE_FOREACH_SAFE_LOCKED(rpc, &pcb->dead_rpcs, dead_links, tmp) {
-            // TODO: implement refs
+            u_int refs;
 
             if ((atomic_load_32(&rpc->flags_atomic) & RPC_CANT_REAP)
                 || (atomic_load_32(&rpc->grants_in_progress_atomic) != 0)
@@ -621,6 +624,12 @@ sdtp_rpc_reap(struct sdtp_inpcb *pcb, bool reap_all)
             }
 
             sdtp_rpc_lock(rpc);
+            refs = refcount_load(&rpc->refs);
+            sdtp_rpc_unlock(rpc);
+
+            if (refs > 1) {
+                continue;
+            }
 
             rpc->magic = 0;
             rpc->state = 0;
@@ -791,7 +800,8 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
     KASSERT(m->m_pkthdr.len >= sdtp_header_lengths[header->type - SDTP_DATA], ("mbuf must be at least the size of its type header"));
     KASSERT(m->m_len >= sdtp_header_lengths[header->type - SDTP_DATA], ("mbuf must contain its type header"));
 
-    struct sdtp_rpc *rpc;
+    bool consumed = false;
+    struct sdtp_rpc *rpc = NULL;
     struct sdtp_expected_rpc_ptr expected_rpc;
 
     expected_rpc = sdtp_get_rpc(m, pcb, header, source);
@@ -800,42 +810,27 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
     }
     rpc = SDTP_GET_VAL(expected_rpc);
 
+    if (rpc) {
+        sdtp_rpc_hold(rpc);
+    }
+
     if (!sdtp_preprocess_rpc(rpc, header)) {
         goto sdtp_handle_packet_error;
     }
 
     switch (header->type) {
     case SDTP_DATA: {
-        bool consumed = sdtp_data_packet(pcb->sdtp, m, rpc, pcb, source);
-        sdtp_rpc_unlock(rpc);
-        if (!consumed) {
-                sdtp_free_mbuf(m);
-        }
-        if (pcb->dead_bufs >= 2 * pcb->sdtp->dead_buffs_limit) {
-            sdtp_rpc_reap(pcb, /* reap_all */ false);
-        }
+        consumed = sdtp_data_packet(pcb->sdtp, m, rpc, pcb, source);
         break;
     }
 
-    case SDTP_CUTOFFS: {
-        /* TODO: temporary solution */
-        struct sdtp_cutoffs_header *cutoffs_header = mtod(m, struct sdtp_cutoffs_header *);
-        if (rpc) {
-            rpc->peer->cutoff_version_be = cutoffs_header->cutoff_version_be;
-            sdtp_rpc_unlock(rpc);
-        }
-        sdtp_free_mbuf(m);
+    case SDTP_CUTOFFS:
+        sdtp_cutoffs_packet(m, rpc);
         break;
-    }
 
-    case SDTP_ACK: {
+    case SDTP_ACK:
         sdtp_ack_packet(pcb, rpc, m, source);
-        if (rpc) {
-            sdtp_rpc_unlock(rpc);
-        }
-        sdtp_free_mbuf(m);
         break;
-    }
 
     case SDTP_GRANT:
     case SDTP_RESEND:
@@ -843,10 +838,6 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
     case SDTP_BUSY:
     case SDTP_FREEZE:
     case SDTP_NEED_ACK:
-        if (rpc) {
-            sdtp_rpc_unlock(rpc);
-        }
-        sdtp_free_mbuf(m);
         break;
 
     default:
@@ -855,11 +846,23 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
     }
 
     if (rpc) {
-        RPC_LOCK_NOTOWNED(rpc);
+        sdtp_rpc_put(rpc);
+        sdtp_rpc_unlock(rpc);
     }
+    if (!consumed) {
+        sdtp_free_mbuf(m);
+    }
+    if (pcb->dead_bufs >= 2 * pcb->sdtp->dead_buffs_limit) {
+        sdtp_rpc_reap(pcb, /* reap_all */ false);
+    }
+
     return;
 
 sdtp_handle_packet_error:
+    if (rpc) {
+        sdtp_rpc_put(rpc);
+        sdtp_rpc_unlock(rpc);
+    }
     sdtp_free_mbuf(m);
 }
 
