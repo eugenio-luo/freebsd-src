@@ -161,6 +161,14 @@ sdtp_metrics_init(struct sdtp *sdtp)
     SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx, SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
                             "recv_rpc_acks", CTLFLAG_RW, &sdtp->metrics.recv_rpc_acks_atomic, 0, "recv_rpc_acks");
 
+    SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx, SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+                            "freed_rpcs", CTLFLAG_RW, &sdtp->metrics.freed_rpcs_atomic, 0, "freed_rpcs");
+    SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx, SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+                            "allocated_rpcs", CTLFLAG_RW, &sdtp->metrics.allocated_rpcs_atomic, 0, "allocated_rpcs");
+    SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx, SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+                            "freed_recv_pkts", CTLFLAG_RW, &sdtp->metrics.freed_recv_pkts_atomic, 0, "freed_recv_pkts");
+    SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx, SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+                            "freed_send_pkts", CTLFLAG_RW, &sdtp->metrics.freed_send_pkts_atomic, 0, "freed_send_pkts");
     return err;
 }
 

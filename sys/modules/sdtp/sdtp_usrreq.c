@@ -239,8 +239,10 @@ sdtp_copy_to_user_copy:
         }
 
         for (i = 0; i < n; ++i) {
+            // TODO: buffer should be free'd here?
             //TODO: sdtp_handle_acks(rpc, bufs[i]);
             sdtp_free_mbuf(bufs[i]);
+            SDTP_METRIC(rpc->sdtpcb, freed_recv_pkts_atomic, 1);
         }
         n = 0;
         sdtp_rpc_lock(rpc);

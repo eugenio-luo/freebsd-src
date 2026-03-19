@@ -64,6 +64,23 @@ sdtp_is_client(uint64_t id)
     return (id & 1) == 0;
 }
 
+static inline struct sdtp_rpc *
+sdtp_rpc_zone_get(struct sdtp_inpcb *pcb)
+{
+    struct sdtp_rpc *rpc = SDTP_ZONE_GET(zones.sdtp_zone_rpc, struct sdtp_rpc);
+    if (rpc) {
+        SDTP_METRIC(pcb, allocated_rpcs_atomic, 1);
+    }
+    return rpc;
+}
+
+static inline void
+sdtp_rpc_zone_free(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc)
+{
+    SDTP_ZONE_FREE(zones.sdtp_zone_rpc, rpc);
+    SDTP_METRIC(pcb, freed_rpcs_atomic, 1);
+}
+
 /*
  * sdtp_handoff_rpc()
  *
@@ -199,7 +216,7 @@ sdtp_new_client_rpc(struct sdtp_inpcb *pcb, struct in6_addr *dest, uint16_t port
     *error = 0;
 
     sdtp_pcb_debug(pcb, "creating new client rpc");
-    rpc = SDTP_ZONE_GET(zones.sdtp_zone_rpc, struct sdtp_rpc);
+    rpc = sdtp_rpc_zone_get(pcb);
     if (!rpc) {
         *error = ENOMEM;
         sdtp_pcb_debug(pcb, "not enough memory for new client rpc");
@@ -251,7 +268,7 @@ sdtp_new_client_rpc(struct sdtp_inpcb *pcb, struct in6_addr *dest, uint16_t port
 sdtp_new_client_rpc_error:
     // TODO: free peer
     if (rpc) {
-        SDTP_ZONE_FREE(zones.sdtp_zone_rpc, rpc);
+        sdtp_rpc_zone_free(pcb, rpc);
     }
     return NULL;
 }
@@ -323,7 +340,7 @@ sdtp_new_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, struct sdtp
 
     sdtp_pcb_debug(pcb, "creating new server rpc");
 
-    rpc = SDTP_ZONE_GET(zones.sdtp_zone_rpc, struct sdtp_rpc);
+    rpc = sdtp_rpc_zone_get(pcb);
     if (!rpc) {
         error = ENOMEM;
         sdtp_pcb_debug(pcb, "not enough memory for new server rpc");
@@ -363,7 +380,7 @@ sdtp_new_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, struct sdtp
 sdtp_new_server_rpc_error:
     // TODO: free peer
     if (rpc) {
-        SDTP_ZONE_FREE(zones.sdtp_zone_rpc, rpc);
+        sdtp_rpc_zone_free(pcb, rpc);
     }
     return SDTP_MAKE_UNEXPECTED(struct sdtp_expected_rpc_ptr, error);
 }
@@ -675,19 +692,21 @@ sdtp_reap_rpc_release:
         for (int i = 0; i < num_out_pkts; ++i) {
             m_freem(out_pkts[i]->data);
             SDTP_ZONE_FREE(zones.sdtp_zone_packet_slist_entry, out_pkts[i]);
+            SDTP_METRIC(pcb, freed_send_pkts_atomic, 1);
         }
 
         sdtp_pcb_debug(pcb, "reap %d in packets", num_in_pkts);
         for (int i = 0; i < num_in_pkts; ++i) {
             m_freem(in_pkts[i]->data);
             sdtp_free_packet_tailq_entry(in_pkts[i]);
+            SDTP_METRIC(pcb, freed_recv_pkts_atomic, 1);
         }
 
         sdtp_pcb_debug(pcb, "reap %d rpcs", num_rpcs);
         for (int i = 0; i < num_rpcs; ++i) {
             sdtp_rpc_lock(rpcs[i]);
             sdtp_rpc_unlock(rpcs[i]);
-            SDTP_ZONE_FREE(zones.sdtp_zone_rpc, rpcs[i]);
+            sdtp_rpc_zone_free(pcb, rpcs[i]);
         }
     }
 
