@@ -266,8 +266,10 @@ sdtp_new_client_rpc(struct sdtp_inpcb *pcb, struct in6_addr *dest, uint16_t port
     return rpc;
 
 sdtp_new_client_rpc_error:
-    // TODO: free peer
     if (rpc) {
+        if (rpc->peer) {
+            sdtp_peer_put(rpc->peer);
+        }
         sdtp_rpc_zone_free(pcb, rpc);
     }
     return NULL;
@@ -378,8 +380,10 @@ sdtp_new_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, struct sdtp
     return SDTP_MAKE_EXPECTED(struct sdtp_expected_rpc_ptr, rpc);
 
 sdtp_new_server_rpc_error:
-    // TODO: free peer
     if (rpc) {
+        if (rpc->peer) {
+            sdtp_peer_put(rpc->peer);
+        }
         sdtp_rpc_zone_free(pcb, rpc);
     }
     return SDTP_MAKE_UNEXPECTED(struct sdtp_expected_rpc_ptr, error);
@@ -704,9 +708,15 @@ sdtp_reap_rpc_release:
 
         sdtp_pcb_debug(pcb, "reap %d rpcs", num_rpcs);
         for (int i = 0; i < num_rpcs; ++i) {
-            sdtp_rpc_lock(rpcs[i]);
-            sdtp_rpc_unlock(rpcs[i]);
-            sdtp_rpc_zone_free(pcb, rpcs[i]);
+            rpc = rpcs[i];
+
+            if (rpc->peer) {
+                sdtp_peer_put(rpc->peer);
+                rpc->peer = NULL;
+            }
+            sdtp_rpc_lock(rpc);
+            sdtp_rpc_unlock(rpc);
+            sdtp_rpc_zone_free(pcb, rpc);
         }
     }
 
@@ -815,8 +825,8 @@ sdtp_cutoffs_packet(struct sdtp_inpcb *pcb, struct mbuf *m, struct in6_addr *sou
     for (i = 1; i < SDTP_MAX_PRIORITIES; ++i) {
         peer->unsched_cutoffs[i] = ntohl(header->unsched_cutoffs_be[i]);
     }
-    // TODO: release peer
     peer->cutoff_version_be = header->cutoff_version_be;
+    sdtp_peer_put(peer);
 }
 
 void

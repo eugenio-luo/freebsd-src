@@ -18,6 +18,8 @@
 #include <sys/hash.h>
 #include <sys/endian.h>
 
+#include <net/route/route_var.h>
+
 #include <netinet/in.h>
 #include <netinet6/in6_fib.h>
 #include <netinet/in_fib.h>
@@ -87,7 +89,6 @@ sdtp_resolve_nh(struct in6_addr *addr, int *error)
     return nh;
 }
 
-// TODO: Implement free peer, we need to reference count
 struct sdtp_peer *
 sdtp_find_peer(struct sdtp_peermap *peermap, struct in6_addr *addr, struct inpcb *pcb, int *error)
 {
@@ -100,6 +101,7 @@ sdtp_find_peer(struct sdtp_peermap *peermap, struct in6_addr *addr, struct inpcb
     LIST_FOREACH(peer, &peermap->buckets[bucket_idx], peermap_links) {
         if (is_ipv6_same(&peer->addr, addr)) {
             mtx_unlock_spin(&peermap->write_spinlock);
+            sdtp_peer_hold(peer);
             return peer;
         }
     }
@@ -131,6 +133,8 @@ sdtp_find_peer(struct sdtp_peermap *peermap, struct in6_addr *addr, struct inpcb
 	peer->current_ticks = -1;
 	peer->resend_rpc = NULL;
 	peer->num_acks = 0;
+    /* one ref for the peermap, one ref for the return variable */
+    refcount_init(&peer->refs, 2);
 	mtx_init(&peer->ack_spinlock, "peer ack spinlock", NULL, MTX_SPIN);
 
     mtx_lock_spin(&peermap->write_spinlock);
@@ -139,6 +143,18 @@ sdtp_find_peer(struct sdtp_peermap *peermap, struct in6_addr *addr, struct inpcb
 
 sdtp_find_peer_done:
     return peer;
+}
+
+void
+sdtp_peer_free(struct sdtp_peer *peer)
+{
+    /* TODO: shouldn't it free the peer from the hashmap as well? */
+
+    KASSERT(peer != NULL, ("peer must be valid"));
+    KASSERT(peer->nh != NULL, ("peer->nh must be valid"));
+
+    nhop_free_any(peer->nh);
+    SDTP_ZONE_FREE(zones.sdtp_zone_peer, peer);
 }
 
 int

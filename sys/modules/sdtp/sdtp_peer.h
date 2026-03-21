@@ -20,6 +20,7 @@
 #include <netinet/in.h>
 
 #include "sdtp.h"
+#include "sdtp_utils.h"
 
 struct sdtp_rpc;
 
@@ -27,8 +28,10 @@ struct sdtp_peer {
     struct in6_addr addr;
     struct nhop_object *nh;
 
+    sdtp_ref_t refs;
+
     int unsched_cutoffs[SDTP_MAX_PRIORITIES];
-    
+
     uint16_t cutoff_version_be;
 
     unsigned long last_update_jiffies;
@@ -63,8 +66,24 @@ struct sdtp_peermap {
 
 struct sdtp_peer *sdtp_find_peer(struct sdtp_peermap *peermap, struct in6_addr *addr, struct inpcb *pcb, int *error);
 void sdtp_peer_ack(struct sdtp_rpc *rpc);
+void sdtp_peer_free(struct sdtp_peer *peer);
 void sdtp_peer_lock(struct sdtp_peer *peer);
 void sdtp_peer_unlock(struct sdtp_peer *peer);
 int sdtp_unsched_priority(struct sdtp *sdtp, struct sdtp_peer *peer, int length);
+
+static inline void
+sdtp_peer_hold(struct sdtp_peer *peer)
+{
+    refcount_acquire(&peer->refs);
+}
+
+static inline void
+sdtp_peer_put(struct sdtp_peer *peer)
+{
+    KASSERT(refcount_load(&peer->refs) > 0, ("peer cannot have negative refs"));
+    if (refcount_release(&peer->refs)) {
+        sdtp_peer_free(peer);
+    }
+}
 
 #endif
