@@ -637,13 +637,6 @@ sdtp_rpc_reap(struct sdtp_inpcb *pcb, bool reap_all)
         SDTP_QUEUE_FOREACH_SAFE_LOCKED(rpc, &pcb->dead_rpcs, dead_links, tmp) {
             u_int refs;
 
-            if ((atomic_load_32(&rpc->flags_atomic) & RPC_CANT_REAP)
-                || (atomic_load_32(&rpc->grants_in_progress_atomic) != 0)
-                || (atomic_load_int(&rpc->msgout.active_xmits_atomic) != 0) ) {
-
-                continue;
-            }
-
             sdtp_rpc_lock(rpc);
             refs = refcount_load(&rpc->refs);
             sdtp_rpc_unlock(rpc);
@@ -652,8 +645,6 @@ sdtp_rpc_reap(struct sdtp_inpcb *pcb, bool reap_all)
                 continue;
             }
 
-            rpc->magic = 0;
-            rpc->state = 0;
             if (rpc->msgout.length >= 0) {
                 while (!SLIST_EMPTY(&rpc->msgout.packets)) {
                     out_pkts[num_out_pkts] = SLIST_FIRST(&rpc->msgout.packets);
@@ -714,6 +705,8 @@ sdtp_reap_rpc_release:
                 sdtp_peer_put(rpc->peer);
                 rpc->peer = NULL;
             }
+            rpc->magic = 0;
+            rpc->state = 0;
             sdtp_rpc_lock(rpc);
             sdtp_rpc_unlock(rpc);
             sdtp_rpc_zone_free(pcb, rpc);
