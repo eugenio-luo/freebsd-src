@@ -855,6 +855,8 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
         goto sdtp_handle_packet_error;
     }
 
+    sdtp_debug_print_pcb_rpcs(pcb, rpc);
+
     switch (header->type) {
     case SDTP_DATA: {
         consumed = sdtp_data_packet(pcb->sdtp, m, rpc, pcb, source);
