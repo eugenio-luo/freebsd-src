@@ -228,6 +228,11 @@ sdtp_data_header_debug(struct sdtp_data_header *header, const char *fmt, ...)
         mtx_assert((RPC)->spinlock_p, MA_NOTOWNED); \
     } while (0)
 
+#define RPC_REFS_ASSERT(RPC, VAL) \
+    do { \
+        KASSERT(refcount_load(&((RPC)->refs)) >= (VAL), ("RPC " #RPC " must have at least " #VAL " references, instead it has %d", refcount_load(&((RPC)->refs)))); \
+    } while (0)
+
 #define INTEREST_NOT_LINKED(INTEREST) \
     do { \
         KASSERT(atomic_load_int(&(INTEREST)->is_response_atomic) == false \
