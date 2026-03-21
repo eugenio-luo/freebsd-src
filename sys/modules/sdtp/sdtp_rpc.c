@@ -312,7 +312,7 @@ sdtp_init_server_rpc_fields(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc, struct
 	rpc->done_timer_ticks = 0;
 	rpc->magic = SDTP_RPC_MAGIC;
 	rpc->start_cycles = get_cyclecount();
-    refcount_init(&rpc->refs, 0);
+    refcount_init(&rpc->refs, 1);
 }
 
 static void
