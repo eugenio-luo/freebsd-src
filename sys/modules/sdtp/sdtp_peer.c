@@ -117,6 +117,7 @@ sdtp_find_peer(struct sdtp_peermap *peermap, struct in6_addr *addr, struct inpcb
 
     peer->nh = sdtp_resolve_nh(addr, error);
     if (*error) {
+        SDTP_ZONE_FREE(zones.sdtp_zone_peer, peer);
         goto sdtp_find_peer_done;
     }
 
