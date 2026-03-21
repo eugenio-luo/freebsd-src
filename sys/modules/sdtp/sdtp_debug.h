@@ -202,13 +202,13 @@ sdtp_data_header_debug(struct sdtp_data_header *header, const char *fmt, ...)
 
 #define VALID_PCB_ASSERT(PCB) \
     do { \
-        KASSERT(PCB != NULL, ("pcb " #PCB " should be valid")); \
-        KASSERT((PCB)->sdtp != NULL, ("pcb " #PCB " should contain valid sdtp")); \
+        KASSERT(PCB != NULL, ("PCB " #PCB " should be valid")); \
+        KASSERT((PCB)->sdtp != NULL, ("PCB " #PCB " should contain valid sdtp")); \
     } while (0)
 
 #define VALID_RPC_ASSERT(RPC) \
     do { \
-        KASSERT(RPC != NULL, ("rpc " #RPC " should be valid")); \
+        KASSERT(RPC != NULL, ("RPC " #RPC " should be valid")); \
         VALID_PCB_ASSERT((RPC)->sdtpcb); \
     } while (0)
 
