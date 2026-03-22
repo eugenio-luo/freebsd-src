@@ -23,8 +23,9 @@ struct sdtp_peer;
 
 struct sdtp_packet_slist_entry {
     /*
-     * it is guaranteed that all these mbufs 
-     * have sdtp_data_header as first bytes
+     * it is guaranteed that all these mbufs
+     * have ip_header as first byte, then
+     * sdtp_data_header next.
     */ 
     struct mbuf *data;
 
@@ -33,8 +34,9 @@ struct sdtp_packet_slist_entry {
 
 struct sdtp_packet_tailq_entry {
     /*
-     * it is guaranteed that all these mbufs 
-     * have sdtp_data_header as first bytes
+     * it is guaranteed that all these mbufs
+     * have ip_header as first byte, then
+     * sdtp_data_header next.
     */ 
     struct mbuf *data;
 
