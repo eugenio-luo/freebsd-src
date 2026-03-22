@@ -22,7 +22,7 @@
 
 extern struct sdtp *sdtp;
 
-SDTP_STATIC bool
+static bool
 sdtp_check_header_conditions(const struct sdtp_common_header * const header, const struct mbuf * const m)
 {
     KASSERT(header != NULL, ("header must be valid"));
@@ -40,7 +40,7 @@ sdtp_check_header_conditions(const struct sdtp_common_header * const header, con
     return true;
 }
 
-SDTP_STATIC struct sdtp_inpcb *
+static struct sdtp_inpcb *
 sdtp_get_pcb(struct sdtp *sdtp_struct, const struct sdtp_common_header * const header)
 {
     KASSERT(header != NULL, ("header must be valid"));
@@ -71,7 +71,7 @@ check_pcb_locks(struct sdtp_inpcb *pcb)
     mtx_assert(&pcb->sdtp->peers.write_spinlock, MA_NOTOWNED);
 }
 
-SDTP_STATIC void
+static void
 sdtp_parse_header_and_src_addr(struct mbuf *m, int iphlen, struct sdtp_common_header **sdtp_header, struct in6_addr *addr)
 {
     KASSERT(m != NULL, ("m must be valid"));
@@ -85,7 +85,7 @@ sdtp_parse_header_and_src_addr(struct mbuf *m, int iphlen, struct sdtp_common_he
     *addr = ipv4_to_ipv6(&ip_header->ip_src);
 }
 
-SDTP_STATIC struct mbuf *
+static struct mbuf *
 sdtp_pull_mbuf_up_to_sdtp_header(struct mbuf *m, uint8_t type, int iphlen)
 {
     KASSERT(m != NULL, ("m must be valid"));

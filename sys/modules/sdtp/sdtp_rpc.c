@@ -269,7 +269,7 @@ sdtp_new_client_rpc_error:
     return NULL;
 }
 
-SDTP_STATIC inline void
+static inline void
 sdtp_set_header_offset(struct sdtp_data_header *header)
 {
     if (ntohl(header->data_segment.offset_be) == -1) {
@@ -322,7 +322,7 @@ sdtp_lock_rpc_and_insert_pcb_list(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc, 
     SDTP_QUEUE_UNLOCK(&pcb->active_rpcs);
 }
 
-SDTP_STATIC struct sdtp_expected_rpc_ptr
+static struct sdtp_expected_rpc_ptr
 sdtp_new_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, struct sdtp_data_header *header)
 {
     int error = 0;
@@ -710,7 +710,7 @@ sdtp_reap_rpc_release:
     return !checked_all_rpcs;
 }
 
-SDTP_STATIC struct sdtp_expected_rpc_ptr
+static struct sdtp_expected_rpc_ptr
 sdtp_get_rpc(struct mbuf *m, struct sdtp_inpcb *pcb, struct sdtp_common_header *header, struct in6_addr *source)
 {
     KASSERT(m != NULL, ("m must be valid"));
@@ -745,7 +745,7 @@ sdtp_get_rpc(struct mbuf *m, struct sdtp_inpcb *pcb, struct sdtp_common_header *
     return SDTP_MAKE_EXPECTED(struct sdtp_expected_rpc_ptr, rpc);
 }
 
-SDTP_STATIC bool
+static bool
 sdtp_preprocess_rpc(struct sdtp_rpc *rpc, struct sdtp_common_header *header)
 {
     KASSERT(header != NULL, ("header must be valid"));
