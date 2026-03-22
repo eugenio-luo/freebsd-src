@@ -14,6 +14,7 @@
 #include "sdtp_peer.h"
 #include "sdtp_debug.h"
 #include "sdtp_test.h"
+#include "sdtp_output.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -769,6 +770,55 @@ sdtp_preprocess_rpc(struct sdtp_rpc *rpc, struct sdtp_common_header *header)
     return true;
 }
 
+/*
+static void
+sdtp_request_retrans(struct sdtp_rpc *rpc)
+{
+    struct sdtp_resend_header resend;
+
+
+}
+*/
+
+static void
+sdtp_need_ack_packet(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc, struct mbuf *m, struct in6_addr *source)
+{
+    struct sdtp_common_header *header = mtod(m, struct sdtp_common_header *);
+    struct sdtp_ack_header ack;
+    struct sdtp_peer *peer;
+    uint64_t id = sdtp_local_id(header->sender_id_be);
+    int error = 0;
+
+    if (rpc != NULL && (rpc->state != SDTP_RPC_INCOMING || rpc->msgin.bytes_remaining > 0)) {
+        // TODO: implement this
+        //sdtp_request_retrans(rpc);
+        sdtp_pcb_debug(pcb, "need_ack: request retransmit");
+        return;
+    } else {
+        peer = sdtp_find_peer(&pcb->sdtp->peers, source, &pcb->inp, &error);
+        if (peer == NULL || error != 0) {
+            sdtp_pcb_debug(pcb, "need_ack: failed to find peer: %d", error);
+            return;
+        }
+    }
+
+    ack.common.type = SDTP_ACK;
+    ack.common.sport_be = header->dport_be;
+    ack.common.dport_be = header->sport_be;
+    ack.common.sender_id_be = htobe64(id);
+    ack.num_acks_be = htons(sdtp_peer_get_acks(peer, NUM_PEER_UNACKED_IDS, ack.acks));
+    sdtp_pcb_debug(pcb, "need_ack: send %d acks", ntohs(ack.num_acks_be));
+
+    if (rpc) {
+        sdtp_rpc_unlock(rpc);
+    }
+    sdtp_send_control_buf(pcb, peer, &ack, sizeof(ack));
+    sdtp_peer_put(peer);
+    if (rpc) {
+        sdtp_rpc_lock(rpc);
+    }
+}
+
 static void
 sdtp_ack_packet(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc, struct mbuf *m, struct in6_addr *source)
 {
@@ -862,6 +912,10 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
         sdtp_cutoffs_packet(pcb, m, source);
         break;
 
+    case SDTP_NEED_ACK:
+        sdtp_need_ack_packet(pcb, rpc, m, source);
+        break;
+
     case SDTP_ACK:
         sdtp_ack_packet(pcb, rpc, m, source);
         break;
@@ -871,7 +925,6 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
     case SDTP_UNKNOWN:
     case SDTP_BUSY:
     case SDTP_FREEZE:
-    case SDTP_NEED_ACK:
         break;
 
     default:

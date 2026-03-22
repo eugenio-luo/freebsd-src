@@ -42,7 +42,7 @@
 
 extern struct sdtp_zones zones;
 
-static int
+int
 sdtp_send_control_buf(struct sdtp_inpcb *pcb, struct sdtp_peer *peer, void *data, size_t len)
 {
     VALID_PCB_ASSERT(pcb);

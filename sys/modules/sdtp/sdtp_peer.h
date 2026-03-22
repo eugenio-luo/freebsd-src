@@ -69,6 +69,7 @@ void sdtp_peer_ack(struct sdtp_rpc *rpc);
 void sdtp_peer_free(struct sdtp_peer *peer);
 void sdtp_peer_lock(struct sdtp_peer *peer);
 void sdtp_peer_unlock(struct sdtp_peer *peer);
+int sdtp_peer_get_acks(struct sdtp_peer *peer, int count, struct sdtp_ack *ack);
 int sdtp_unsched_priority(struct sdtp *sdtp, struct sdtp_peer *peer, int length);
 
 static inline void

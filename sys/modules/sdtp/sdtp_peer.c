@@ -159,6 +159,26 @@ sdtp_peer_free(struct sdtp_peer *peer)
 }
 
 int
+sdtp_peer_get_acks(struct sdtp_peer *peer, int count, struct sdtp_ack *acks)
+{
+    if (peer->num_acks == 0) {
+        return 0;
+    }
+
+    sdtp_peer_lock(peer);
+
+    if (count > peer->num_acks) {
+        count = peer->num_acks;
+    }
+
+    memcpy(acks, &peer->acks[peer->num_acks - count], count * sizeof(struct sdtp_ack));
+    peer->num_acks -= count;
+
+    sdtp_peer_unlock(peer);
+    return count;
+}
+
+int
 sdtp_unsched_priority(struct sdtp *sdtp, struct sdtp_peer *peer, int length)
 {
     int i;
