@@ -52,12 +52,6 @@ void sdtp_free_mbuf(struct mbuf *buf)
     m_freem(buf);
 }
 
-static uint64_t
-sdtp_local_id(uint64_t sender_id_be)
-{
-    return be64toh(sender_id_be) ^ 1;
-}
-
 bool
 sdtp_is_client(uint64_t id)
 {

@@ -105,4 +105,10 @@ is_ipv6_same(struct in6_addr *a, struct in6_addr *b)
     return memcmp(a, b, sizeof(struct in6_addr)) == 0;
 }
 
+static inline uint64_t
+sdtp_local_id(uint64_t sender_id_be)
+{
+    return be64toh(sender_id_be) ^ 1;
+}
+
 #endif
