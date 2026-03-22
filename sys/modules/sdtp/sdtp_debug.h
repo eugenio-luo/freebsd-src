@@ -248,13 +248,13 @@ sdtp_debug_print_bucket_rpcs(struct sdtp_rpc_bucket *buckets, size_t size, struc
         struct sdtp_rpc *rpc;
         struct sdtp_rpc_mlist *rpcs = &buckets[i].rpcs;
 
-        if (owned_rpc && owned_rpc->spinlock_p != &rpcs->spinlock) {
+        if (!owned_rpc || owned_rpc->spinlock_p != &rpcs->spinlock) {
             SDTP_LIST_LOCK(rpcs);
         }
         SDTP_LIST_FOREACH_LOCKED(rpc, rpcs, hash_links) {
             sdtp_rpc_debug(rpc, "message in num bufs: %d, message out num bufs: %d", rpc->msgin.num_bufs, rpc->msgout.num_bufs);
         }
-        if (owned_rpc && owned_rpc->spinlock_p != &rpcs->spinlock) {
+        if (!owned_rpc || owned_rpc->spinlock_p != &rpcs->spinlock) {
             SDTP_LIST_UNLOCK(rpcs);
         }
     }
