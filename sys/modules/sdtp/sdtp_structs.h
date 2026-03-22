@@ -58,6 +58,8 @@ struct sdtp_metrics {
     uint64_t allocated_rpcs_atomic;
     uint64_t freed_recv_pkts_atomic;
     uint64_t freed_send_pkts_atomic;
+
+    uint64_t received_pkts[SDTP_ACK - SDTP_DATA + 1];
 };
 
 struct sdtp_dead_dst {

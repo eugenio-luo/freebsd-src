@@ -169,6 +169,26 @@ sdtp_metrics_init(struct sdtp *sdtp)
                             "freed_recv_pkts", CTLFLAG_RW, &sdtp->metrics.freed_recv_pkts_atomic, 0, "freed_recv_pkts");
     SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx, SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
                             "freed_send_pkts", CTLFLAG_RW, &sdtp->metrics.freed_send_pkts_atomic, 0, "freed_send_pkts");
+
+    SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx, SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+                            "received_data_pkts", CTLFLAG_RW, &sdtp->metrics.received_pkts[SDTP_DATA - SDTP_DATA], 0, "received_data_pkts");
+    SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx, SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+                            "received_grant_pkts", CTLFLAG_RW, &sdtp->metrics.received_pkts[SDTP_GRANT - SDTP_DATA], 0, "received_grant_pkts");
+    SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx, SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+                            "received_resend_pkts", CTLFLAG_RW, &sdtp->metrics.received_pkts[SDTP_RESEND - SDTP_DATA], 0, "received_resend_pkts");
+    SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx, SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+                            "received_unknown_pkts", CTLFLAG_RW, &sdtp->metrics.received_pkts[SDTP_UNKNOWN - SDTP_DATA], 0, "received_unknown_pkts");
+    SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx, SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+                            "received_busy_pkts", CTLFLAG_RW, &sdtp->metrics.received_pkts[SDTP_BUSY - SDTP_DATA], 0, "received_busy_pkts");
+    SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx, SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+                            "received_cutoffs_pkts", CTLFLAG_RW, &sdtp->metrics.received_pkts[SDTP_CUTOFFS - SDTP_DATA], 0, "received_cutoffs_pkts");
+    SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx, SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+                            "received_freeze_pkts", CTLFLAG_RW, &sdtp->metrics.received_pkts[SDTP_FREEZE - SDTP_DATA], 0, "received_freeze_pkts");
+    SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx, SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+                            "received_need_ack_pkts", CTLFLAG_RW, &sdtp->metrics.received_pkts[SDTP_NEED_ACK - SDTP_DATA], 0, "received_need_ack_pkts");
+    SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx, SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+                            "received_ack_pkts", CTLFLAG_RW, &sdtp->metrics.received_pkts[SDTP_ACK - SDTP_DATA], 0, "received_ack_pkts");
+
     return err;
 }
 

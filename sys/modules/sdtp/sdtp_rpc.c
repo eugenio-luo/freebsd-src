@@ -850,6 +850,7 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
     }
 
     sdtp_debug_print_pcb_rpcs(pcb, rpc);
+    SDTP_METRIC(pcb, received_pkts[header->type - SDTP_DATA], 1);
 
     switch (header->type) {
     case SDTP_DATA: {
