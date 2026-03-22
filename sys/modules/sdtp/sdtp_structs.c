@@ -12,6 +12,10 @@
 #include "sdtp.h"
 #include "sdtp_debug.h"
 
+#ifdef SDTP_TEST
+#include "sdtp_test.h"
+#endif
+
 #include <sys/types.h>
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -21,6 +25,10 @@
 #include <machine/cpu.h>
 #include <machine/atomic.h>
 #include <sys/socketvar.h>
+
+#ifdef SDTP_TEST
+struct sdtp_test_state test_state;
+#endif
 
 MALLOC_DEFINE(M_SDTP_PEERMAP, "sdtp peermap", "SDTP peermap buckets");
 DPCPU_DEFINE(struct sdtp_core, sdtp_cores);
@@ -285,6 +293,10 @@ int sdtp_init(struct sdtp *sdtp)
     err = sdtp_zone_init();
     err = sdtp_core_init();
     err = sdtp_struct_init(sdtp);
+
+#ifdef SDTP_TEST
+    err = sdtp_test_state_init(&test_state, sdtp);
+#endif
 
     return err;
 }

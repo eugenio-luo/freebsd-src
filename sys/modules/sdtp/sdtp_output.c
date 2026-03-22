@@ -39,6 +39,7 @@
 #include "sdtp_peer.h"
 #include "sdtp_structs.h"
 #include "sdtp_os.h"
+#include "sdtp_test.h"
 
 extern struct sdtp_zones zones;
 
@@ -425,6 +426,12 @@ sdtp_send_next_data(struct sdtp_rpc *rpc, bool force)
     struct sdtp *sdtp = rpc->sdtpcb->sdtp;
     struct mbuf *txm;
 
+#ifdef SDTP_TEST
+    static int i = 0;
+    struct sdtp_data_header *header;
+    int dropped = atomic_load_int(&test_state.drop_next_rpc_pkt_idx_atomic);
+#endif
+
 	atomic_add_int(&rpc->msgout.active_xmits_atomic, 1);
     while (rpc->msgout.next_xmit && *rpc->msgout.next_xmit) {
         int priority;
@@ -433,6 +440,13 @@ sdtp_send_next_data(struct sdtp_rpc *rpc, bool force)
         KASSERT(buf->m_flags & M_PKTHDR, ("First packet buf need to contain a header"));
         KASSERT(!(buf->m_flags & M_EXT), ("buf must not have external storage"));
         sdtp_rpc_debug(rpc, "packet length: %d", buf->m_pkthdr.len);
+
+#ifdef SDTP_TEST
+        header = (struct sdtp_data_header *) (mtod(buf, char *) + rpc->sdtpcb->ip_header_length);
+        if (header->data_segment.offset_be == 0) {
+            i = 0;
+        }
+#endif
 
         if (rpc->msgout.next_xmit_offset > rpc->msgout.granted) {
             sdtp_rpc_debug(rpc, "rpc trying to send %d bytes over granted bytes %d",
@@ -460,6 +474,13 @@ sdtp_send_next_data(struct sdtp_rpc *rpc, bool force)
         if (rpc->msgout.next_xmit_offset > rpc->msgout.length) {
             rpc->msgout.next_xmit_offset = rpc->msgout.length;
         }
+
+#ifdef SDTP_TEST
+        if (dropped == i++) {
+            atomic_store_int(&test_state.drop_next_rpc_pkt_idx_atomic, -1);
+            continue;
+        }
+#endif
 
         sdtp_rpc_unlock(rpc);
 

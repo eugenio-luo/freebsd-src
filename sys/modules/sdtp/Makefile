@@ -11,6 +11,11 @@ SRCS+= opt_inet.h opt_inet6.h
 OPT_FLAGS+= -DSDTP_DEBUG
 .endif
 
+.if defined(SDTP_TEST)
+OPT_FLAGS+= -DSDTP_TEST
+SRCS+= sdtp_test.c
+.endif
+
 CFLAGS= ${OPT_FLAGS}
 CFLAGS+= -DINVARIANTS -DINVARIANT_SUPPORT -DWITNESS
 
