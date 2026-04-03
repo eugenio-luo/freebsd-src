@@ -265,6 +265,8 @@ sdtp_create_packet_mbuf(struct sdtp_rpc *rpc, struct uio *uio, int m_size, int o
     KASSERT(res.buf != NULL, ("res buf must be valid"));
     KASSERT(res.result > 0, ("res result must be positive"));
 
+    sdtp_rpc_debug(rpc, "offset: %d, length: %d", ntohl(header->data_segment.offset_be), res.result);
+
     return res;
 
 sdtp_create_packet_mbuf_error:
@@ -321,7 +323,9 @@ sdtp_fill_packets_slist(struct sdtp_rpc *rpc, struct uio *uio, int max_packet_si
         KASSERT(entry->data->m_pkthdr.len <= max_packet_size + IP_SDTP_HEADER_SIZE(rpc->sdtpcb, struct sdtp_data_header),
                 ("buf size (%d) must be less or equal to MTU %lu",
                  entry->data->m_pkthdr.len, max_packet_size + IP_SDTP_HEADER_SIZE(rpc->sdtpcb, struct sdtp_data_header)));
-        sdtp_rpc_debug(rpc, "buffer slist length: %d", entry->data->m_pkthdr.len);
+        sdtp_rpc_debug(rpc, "buffer slist: offset %d, length %d",
+                       ntohl(((struct sdtp_data_header *)(mtod(entry->data, char *) + rpc->sdtpcb->ip_header_length))->data_segment.offset_be),
+                       entry->data->m_pkthdr.len);
 
         sdtp_rpc_lock(rpc);
         if (prev == NULL) {

@@ -33,7 +33,7 @@ extern struct sdtp_zones zones;
 void
 sdtp_rpc_lock(struct sdtp_rpc *rpc)
 {
-    sdtp_rpc_debug(rpc, "locked by %#lx", (uintptr_t)curthread);
+    //sdtp_rpc_debug(rpc, "locked by %#lx", (uintptr_t)curthread);
     mtx_lock_spin(rpc->spinlock_p);
 }
 
@@ -41,7 +41,7 @@ void
 sdtp_rpc_unlock(struct sdtp_rpc *rpc)
 {
     mtx_unlock_spin(rpc->spinlock_p);
-    sdtp_rpc_debug(rpc, "unlocked by %#lx", (uintptr_t)curthread);
+    //sdtp_rpc_debug(rpc, "unlocked by %#lx", (uintptr_t)curthread);
 }
 
 void sdtp_free_mbuf(struct mbuf *buf)
@@ -809,6 +809,7 @@ sdtp_need_ack_packet(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc, struct mbuf *
     ack.num_acks_be = htons(sdtp_peer_get_acks(peer, NUM_PEER_UNACKED_IDS, ack.acks));
     sdtp_pcb_debug(pcb, "need_ack: send %d acks", ntohs(ack.num_acks_be));
 
+    // TODO: fix this horrible locking
     if (rpc) {
         sdtp_rpc_unlock(rpc);
     }
