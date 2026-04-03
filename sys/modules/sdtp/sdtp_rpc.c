@@ -848,6 +848,53 @@ sdtp_ack_packet(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc, struct mbuf *m, st
 }
 
 static void
+sdtp_resend_packet(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc, struct mbuf *m, struct in6_addr *source)
+{
+    struct sdtp_resend_header *header = mtod(m, struct sdtp_resend_header *);
+    struct sdtp_busy_header busy;
+
+    int header_offset = ntohl(header->offset_be);
+    int header_length = ntohl(header->length_be);
+    int offset, length, end;
+
+    if (rpc == NULL) {
+        sdtp_pcb_debug(pcb, "resend_packet: unknown rpc");
+        sdtp_send_unknown(pcb, m, source);
+        return;
+    }
+
+    offset = header_offset != -1 ? header_offset : ntohl(header->common.sequence_be);
+    length = header_length != -1 ? header_length : rpc->msgout.length;
+    end = offset + length;
+
+    if ((!sdtp_is_client(rpc->id) && rpc->state != SDTP_RPC_OUTGOING) /* 1. we are the server but don't have a response yet */
+        || (rpc->msgout.next_xmit_offset < rpc->msgout.granted))      /* 2. we chose not send this message */
+    {
+        sdtp_pcb_debug(pcb, "resend_packet: send busy");
+        // TODO: fix this horrible locking
+        if (rpc) {
+            sdtp_rpc_unlock(rpc);
+        }
+        sdtp_send_control(rpc, SDTP_BUSY, &busy, sizeof(busy));
+        if (rpc) {
+        sdtp_rpc_lock(rpc);
+        }
+        return;
+    }
+
+    sdtp_pcb_debug(pcb, "resend_packet: send data (offset: %d, end: %d)", offset, end);
+
+    // TODO: fix this horrible locking
+    if (rpc) {
+        sdtp_rpc_unlock(rpc);
+    }
+    sdtp_resend_data(rpc, offset, end, header->priority);
+    if (rpc) {
+        sdtp_rpc_lock(rpc);
+    }
+}
+
+static void
 sdtp_cutoffs_packet(struct sdtp_inpcb *pcb, struct mbuf *m, struct in6_addr *source)
 {
     struct sdtp_cutoffs_header *header = mtod(m, struct sdtp_cutoffs_header *);
@@ -909,6 +956,10 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
         break;
     }
 
+    case SDTP_RESEND:
+        sdtp_resend_packet(pcb, rpc, m, source);
+        break;
+
     case SDTP_CUTOFFS:
         sdtp_cutoffs_packet(pcb, m, source);
         break;
@@ -922,7 +973,6 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source, struct sdtp_inpcb *p
         break;
 
     case SDTP_GRANT:
-    case SDTP_RESEND:
     case SDTP_UNKNOWN:
     case SDTP_BUSY:
     case SDTP_FREEZE:

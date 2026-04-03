@@ -131,6 +131,25 @@ sdtp_send_control(struct sdtp_rpc *rpc,
     return sdtp_send_control_buf(rpc->sdtpcb, rpc->peer, data, len);
 }
 
+void
+sdtp_send_unknown(struct sdtp_inpcb *pcb, struct mbuf *m, struct in6_addr *source)
+{
+    struct sdtp_peer *peer;
+    struct sdtp_common_header *header = mtod(m, struct sdtp_common_header *);
+    struct sdtp_unknown_header unknown;
+    int error = 0;
+
+    unknown.common.sport_be = header->dport_be;
+    unknown.common.dport_be = header->sport_be;
+    unknown.common.type = SDTP_UNKNOWN;
+    unknown.common.sender_id_be = htobe64(sdtp_local_id(header->sender_id_be));
+    peer = sdtp_find_peer(&pcb->sdtp->peers, source, &pcb->inp, &error);
+    if (error == 0 && peer != NULL) {
+        sdtp_send_control_buf(pcb, peer, &unknown, sizeof(unknown));
+        sdtp_peer_put(peer);
+    }
+}
+
 static void
 sdtp_msgout_init(struct sdtp_rpc *rpc, struct uio *uio)
 {
@@ -558,4 +577,36 @@ sdtp_message_out(struct sdtp_rpc *rpc, struct uio *uio, bool immediate_send)
 sdtp_message_out_error:
     atomic_clear_32(&rpc->flags_atomic, RPC_COPYING_FROM_USER);
     return error;
+}
+
+void
+sdtp_resend_data(struct sdtp_rpc *rpc, int start, int end, int priority)
+{
+    VALID_RPC_ASSERT(rpc);
+    KASSERT(start >= 0, ("start must not be negative: %d", start));
+    KASSERT(end >= 0, ("end must not be negative: %d", end));
+    KASSERT(end >= start, ("end must be more than start: %d, %d", end, start));
+
+    struct sdtp_packet_slist_entry *packet;
+    struct sdtp_data_header *header;
+    struct mbuf *txm;
+    int offset, dbytes;
+
+    SLIST_FOREACH(packet, &rpc->msgout.packets, link) {
+        header = ((struct sdtp_data_header *)(mtod(packet->data, char *) + rpc->sdtpcb->ip_header_length));
+        offset = ntohl(header->data_segment.offset_be);
+        dbytes = packet->data->m_pkthdr.len - sizeof(struct sdtp_data_header) - rpc->sdtpcb->ip_header_length;
+
+        if (offset >= end) {
+            break;
+        }
+        if (start >= (offset + dbytes)) {
+            continue;
+        }
+
+        txm = m_dup(packet->data, M_NOWAIT);
+        KASSERT(txm != NULL, ("txm must be valid"));
+        sdtp_rpc_debug(rpc, "resend data from %d to %d", offset, offset + dbytes);
+        sdtp_send_data(rpc, txm, priority);
+    }
 }
