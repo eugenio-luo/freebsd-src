@@ -290,9 +290,15 @@ int sdtp_init(struct sdtp *sdtp)
 
     int err;
 
-    err = sdtp_zone_init();
-    err = sdtp_core_init();
-    err = sdtp_struct_init(sdtp);
+    if ((err = sdtp_zone_init()) != 0) {
+        return err;
+    }
+    if ((err = sdtp_core_init()) != 0) {
+        return err;
+    }
+    if ((err = sdtp_struct_init(sdtp)) != 0) {
+        return err;
+    }
 
 #ifdef SDTP_TEST
     err = sdtp_test_state_init(&test_state, sdtp);
