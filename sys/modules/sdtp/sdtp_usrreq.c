@@ -77,9 +77,9 @@ sdtp_register_interest(struct sdtp_interest *interest, struct sdtp_inpcb *pcb, i
         }
     }
 
-    mtx_lock_spin(&pcb->spinlock);
+    sdtp_pcb_lock(pcb);
     if (pcb->shutdown) {
-        mtx_unlock_spin(&pcb->spinlock);
+        sdtp_pcb_unlock(pcb);
         error = ESHUTDOWN;
         goto sdtp_register_interest_error;
     }
@@ -125,7 +125,7 @@ sdtp_register_interest(struct sdtp_interest *interest, struct sdtp_inpcb *pcb, i
     if (rpc != NULL) {
         sdtp_rpc_put(rpc);
     }
-    mtx_unlock_spin(&pcb->spinlock);
+    sdtp_pcb_unlock(pcb);
     return 0;
 
 sdtp_register_interest_claim_rpc:
@@ -139,7 +139,7 @@ sdtp_register_interest_claim_rpc:
     }
 
     atomic_set_32(&ready_rpc->flags_atomic, RPC_HANDING_OFF);
-    mtx_unlock_spin(&pcb->spinlock);
+    sdtp_pcb_unlock(pcb);
     if (!atomic_load_int(&interest->locked_atomic)) {
         sdtp_rpc_lock(ready_rpc);
         atomic_store_int(&interest->locked_atomic, 1);
@@ -342,7 +342,7 @@ sdtp_wait_for_message_found_rpc:
             || atomic_load_int(&interest.is_response_atomic)
             || atomic_load_int(&interest.is_request_atomic)) {
 
-            mtx_lock_spin(&pcb->spinlock);
+            sdtp_pcb_lock(pcb);
             if (interest.reg_rpc) {
                 interest.reg_rpc->interest = NULL;
             }
@@ -352,7 +352,7 @@ sdtp_wait_for_message_found_rpc:
             if (atomic_load_int(&interest.is_request_atomic)) {
                 remove_request_interest(pcb, &interest);
             }
-            mtx_unlock_spin(&pcb->spinlock);
+            sdtp_pcb_unlock(pcb);
         }
 
         rpc = (struct sdtp_rpc *) atomic_load_ptr(&interest.ready_rpc_atomic);

@@ -69,7 +69,7 @@ sdtp_inpcb_bind(struct sdtp_pcbmap *pcbmap, uint16_t port, struct sdtp_inpcb *pc
         return EINVAL;
     }
 
-    mtx_lock_spin(&pcb->spinlock);
+    sdtp_pcb_lock(pcb);
     mtx_lock_spin(&pcbmap->write_spinlock);
 
     if (pcb->shutdown) {
@@ -91,7 +91,7 @@ sdtp_inpcb_bind(struct sdtp_pcbmap *pcbmap, uint16_t port, struct sdtp_inpcb *pc
 
 sdtp_inpcb_bind_done:
     mtx_unlock_spin(&pcbmap->write_spinlock);
-    mtx_unlock_spin(&pcb->spinlock);
+    sdtp_pcb_unlock(pcb);
     return error;
 }
 
@@ -168,9 +168,9 @@ sdtp_inpcb_free(struct sdtp_inpcb *pcb)
     struct sdtp_rpc *rpc, *next_rpc;
     struct sdtp_interest *interest;
 
-    mtx_lock_spin(&pcb->spinlock);
+    sdtp_pcb_lock(pcb);
     if (pcb->shutdown) {
-        mtx_unlock_spin(&pcb->spinlock);
+        sdtp_pcb_unlock(pcb);
         return;
     }
 
@@ -178,7 +178,7 @@ sdtp_inpcb_free(struct sdtp_inpcb *pcb)
     mtx_lock_spin(&pcb->sdtp->port_map.write_spinlock);
     LIST_REMOVE(&pcb->pcbmap_links, hash_links);
     mtx_unlock_spin(&pcb->sdtp->port_map.write_spinlock);
-    mtx_unlock_spin(&pcb->spinlock);
+    sdtp_pcb_unlock(pcb);
 
     SDTP_QUEUE_LOCK(&pcb->active_rpcs);
     SDTP_QUEUE_FOREACH_SAFE_LOCKED(rpc, &pcb->active_rpcs, active_links, next_rpc) {
@@ -188,7 +188,7 @@ sdtp_inpcb_free(struct sdtp_inpcb *pcb)
     }
     SDTP_QUEUE_UNLOCK(&pcb->active_rpcs);
 
-    mtx_lock_spin(&pcb->spinlock);
+    sdtp_pcb_lock(pcb);
     SDTP_QUEUE_LOCK(&pcb->request_interests);
     SDTP_QUEUE_FOREACH_LOCKED(interest, &pcb->request_interests, request_links) {
         wakeup(&interest->spinlock);
@@ -200,7 +200,7 @@ sdtp_inpcb_free(struct sdtp_inpcb *pcb)
         wakeup(&interest->spinlock);
     }
     SDTP_QUEUE_UNLOCK(&pcb->response_interests);
-    mtx_unlock_spin(&pcb->spinlock);
+    sdtp_pcb_unlock(pcb);
 
     sdtp_rpc_reap(pcb, /* reap_all */ true);
 

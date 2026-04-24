@@ -137,6 +137,18 @@ remove_request_interest(struct sdtp_inpcb *pcb, struct sdtp_interest *interest)
     atomic_store_int(&interest->is_request_atomic, false);
 }
 
+static inline void
+sdtp_pcb_lock(struct sdtp_inpcb *pcb)
+{
+    mtx_lock_spin(&pcb->spinlock);
+}
+
+static inline void
+sdtp_pcb_unlock(struct sdtp_inpcb *pcb)
+{
+    mtx_unlock_spin(&pcb->spinlock);
+}
+
 void sdtp_sorwakeup(struct sdtp_inpcb *pcb);
 struct sdtp_inpcb *sdtp_find_inpcb(struct sdtp_pcbmap *pcbmap, uint16_t port);
 int sdtp_inpcb_bind(struct sdtp_pcbmap *pcbmap, uint16_t port, struct sdtp_inpcb *pcb);
