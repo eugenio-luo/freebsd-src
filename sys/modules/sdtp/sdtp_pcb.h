@@ -13,6 +13,7 @@
 #include <sys/cdefs.h>
 #include <sys/mutex.h>
 #include <sys/socket.h>
+#include <sys/socketvar.h>
 
 #include <netinet/in.h>
 #include <netinet/in_pcb.h>
@@ -89,6 +90,12 @@ struct sdtp_inpcb {
     struct sdtp_context_list ctx_buckets[SDTP_SERVER_RPC_BUCKETS];
     void *reuse_ctx;
 };
+
+static inline struct sdtp_inpcb *
+sdtp_so_pcb(struct socket *so)
+{
+    return (struct sdtp_inpcb *) so->so_pcb;
+}
 
 static inline void
 insert_response_interest(struct sdtp_inpcb *pcb, struct sdtp_interest *interest)

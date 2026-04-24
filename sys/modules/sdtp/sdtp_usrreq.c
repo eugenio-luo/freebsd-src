@@ -40,7 +40,7 @@ sdtp_attach(struct socket *so, int proto, struct thread *p)
     int error;
 	struct sdtp_inpcb *inp;
 
-    inp = (struct sdtp_inpcb *)so->so_pcb;
+    inp = sdtp_so_pcb(so);
     if (inp != NULL) {
         return EINVAL;
     }
@@ -464,7 +464,7 @@ sdtp_soreceive(struct socket *so,
     struct mbuf *control_buf = NULL;
 	uint8_t sockbuf[256];
 
-    inp = (struct sdtp_inpcb *) so->so_pcb;
+    inp = sdtp_so_pcb(so);
     if (inp == NULL) {
         return EINVAL;
     }
@@ -550,7 +550,7 @@ sdtp_close(struct socket *so)
     struct epoch_tracker et;
     struct sdtp_inpcb *pcb;
 
-    pcb = (struct sdtp_inpcb *) so->so_pcb;
+    pcb = sdtp_so_pcb(so);
     if (pcb == NULL) {
         return;
     }
@@ -572,7 +572,7 @@ sdtp_bind(struct socket *so, struct sockaddr *addr, struct thread *p)
     struct sdtp_inpcb *inp;
     uint16_t port;
 
-    inp = (struct sdtp_inpcb *) so->so_pcb;
+    inp = sdtp_so_pcb(so);
     if (inp == NULL) {
         return EINVAL;
     }
@@ -780,7 +780,7 @@ sdtp_sosend(struct socket *so, struct sockaddr *addr, struct uio *uio, struct mb
 
     sdtp_debug("sosend\n");
 
-    pcb = (struct sdtp_inpcb *) so->so_pcb;
+    pcb = sdtp_so_pcb(so);
     if (pcb == NULL) {
         sdtp_debug("invalid pcb\n");
         error = EINVAL;
