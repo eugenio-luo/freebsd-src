@@ -228,6 +228,16 @@ sdtp_data_header_debug(struct sdtp_data_header *header, const char *fmt, ...)
         mtx_assert((RPC)->spinlock_p, MA_NOTOWNED); \
     } while (0)
 
+#define PCB_LOCK_OWNED(PCB) \
+    do { \
+        mtx_assert(&((PCB)->spinlock), MA_OWNED); \
+    } while (0)
+
+#define PCB_LOCK_NOTOWNED(PCB) \
+    do { \
+        mtx_assert(&((PCB)->spinlock), MA_NOTOWNED); \
+    } while (0)
+
 #define RPC_REFS_ASSERT(RPC, VAL) \
     do { \
         KASSERT(refcount_load(&((RPC)->refs)) >= (VAL), ("RPC " #RPC " must have at least " #VAL " references, instead it has %d", refcount_load(&((RPC)->refs)))); \
