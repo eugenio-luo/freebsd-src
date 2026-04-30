@@ -23,7 +23,7 @@
 #include "sdtp_queue.h"
 
 struct sdtp;
-struct sdtp_inpcb; 
+struct sdtp_inpcb;
 struct sdtp_rpc;
 
 struct sdtp_interest {

@@ -791,7 +791,7 @@ sdtp_sosend(struct socket *so, struct sockaddr *addr, struct uio *uio, struct mb
     if (args == NULL) {
         sdtp_debug("invalid control\n");
         error = EINVAL;
-        goto sdtp_sosend_error;  
+        goto sdtp_sosend_error;
     }
 
     if (addr->sa_family != so->so_proto->pr_domain->dom_family) {

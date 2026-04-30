@@ -103,7 +103,7 @@ struct sdtp {
 
     struct sdtp_pcbmap port_map __aligned(CACHE_LINE_SIZE);
     struct sdtp_peermap peers;
-    
+
     int unsched_bytes;
     int link_mbps;
     int poll_usecs;
