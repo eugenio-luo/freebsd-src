@@ -19,7 +19,6 @@
 #include <netinet/in_pcb.h>
 
 #include "sdtp_common.h"
-#include "sdtp_pool.h"
 #include "sdtp_queue.h"
 
 struct sdtp;
@@ -84,8 +83,6 @@ struct sdtp_inpcb {
 
     struct sdtp_rpc_bucket client_rpc_buckets[SDTP_CLIENT_RPC_BUCKETS];
     struct sdtp_rpc_bucket server_rpc_buckets[SDTP_SERVER_RPC_BUCKETS];
-
-    struct sdtp_pool buffer_pool;
 
     struct sdtp_context_list ctx_buckets[SDTP_SERVER_RPC_BUCKETS];
     void *reuse_ctx;

@@ -135,9 +135,7 @@ sdtp_inpcb_alloc(struct socket *so, struct sdtp *sdtp)
     SDTP_LIST_INIT(&inp->ready_responses);
     SDTP_QUEUE_INIT(&inp->request_interests);
     SDTP_QUEUE_INIT(&inp->response_interests);
-
 	inp->reuse_ctx = NULL;
-	memset(&inp->buffer_pool, 0, sizeof(inp->buffer_pool));
 
     mtx_lock_spin(&pcbmap->write_spinlock);
  

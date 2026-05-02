@@ -25,7 +25,6 @@
 #include "sdtp.h"
 #include "sdtp_os.h"
 #include "sdtp_structs.h"
-#include "sdtp_pool.h"
 #include "sdtp_debug.h"
 #include "sdtp_output.h"
 
