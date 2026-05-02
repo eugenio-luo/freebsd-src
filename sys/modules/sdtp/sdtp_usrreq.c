@@ -21,12 +21,19 @@
 #include <sys/uio.h>
 
 #include <netinet/in.h>
+#include <netinet/ip.h>
+#include <netinet/ip_var.h>
+#ifdef INET6
+#include <netinet/ip6.h>
+#include <netinet6/ip6_var.h>
+#endif
 
 #include "sdtp.h"
 #include "sdtp_os.h"
 #include "sdtp_structs.h"
 #include "sdtp_debug.h"
 #include "sdtp_output.h"
+#include "sdtp_ctx.h"
 
 extern struct sdtp *sdtp;
 extern struct sdtp_zones zones;
@@ -825,6 +832,75 @@ sdtp_sosend_error:
     return error;
 }
 
+static int
+sdtp_setsockopt(struct sdtp_inpcb *pcb, struct sockopt *sopt)
+{
+    VALID_PCB_ASSERT(pcb);
+
+    int error = 0;
+
+    if (sopt->sopt_level != IPPROTO_SDTP) {
+        return ENOPROTOOPT;
+    }
+
+    switch (sopt->sopt_name) {
+    default:
+        error = ENOPROTOOPT;
+        break;
+    }
+
+    return error;
+}
+
+static int
+sdtp_getsockopt(void)
+{
+    return ENOPROTOOPT;
+}
+
+static int
+sdtp_ctloutput(struct socket *so, struct sockopt *sopt)
+{
+    int error = 0;
+    struct sdtp_inpcb *pcb = sdtp_so_pcb(so);
+
+    VALID_PCB_ASSERT(pcb);
+
+    // TODO: lock pcb here?
+	if (sopt->sopt_level != so->so_proto->pr_protocol) {
+#ifdef INET6
+        if (INP_CHECK_SOCKAF(so, AF_INET6)) {
+            error = ip6_ctloutput(so, sopt);
+        }
+#endif
+#if defined(INET) && defined(INET6)
+        else
+#endif
+#ifdef INET
+        {
+            error = ip_ctloutput(so, sopt);
+        }
+#endif
+        return (error);
+    }
+
+    switch (sopt->sopt_dir) {
+    case SOPT_SET:
+        error = sdtp_setsockopt(pcb, sopt);
+        break;
+
+    case SOPT_GET:
+        error = sdtp_getsockopt();
+        break;
+
+    default:
+        error = ENOPROTOOPT;
+        break;
+    }
+
+    return error;
+}
+
 struct protosw sdtp_protosw = {
 	.pr_type = SOCK_DGRAM,
 	.pr_flags = 0,
@@ -834,7 +910,7 @@ struct protosw sdtp_protosw = {
 	.pr_bind =	    sdtp_bind,
 	.pr_close =	sdtp_close,
 	.pr_sosend =	sdtp_sosend,
-	//.pr_ctloutput =	sdtp_ctloutput,
+	.pr_ctloutput =	sdtp_ctloutput,
 	/*
 	.pr_connect =	sdtp_connect,
 	.pr_abort =	sdp_abort,
@@ -862,7 +938,7 @@ struct protosw sdtp6_protosw = {
 	.pr_bind =	    sdtp_bind,
 	.pr_close =	sdtp_close,
 	.pr_sosend =	sdtp_sosend,
-	//.pr_ctloutput =	sdtp_ctloutput,
+	.pr_ctloutput =	sdtp_ctloutput,
 	/*
 	.pr_connect =	sdtp_connect,
 	.pr_abort =	sdp_abort,
