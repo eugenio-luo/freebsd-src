@@ -1,0 +1,156 @@
+#!/usr/libexec/atf-sh
+
+COUNT=20000
+
+require_tools()
+{
+    atf_require_prog ifconfig
+    atf_require_prog jail
+    atf_require_prog jexec
+    atf_require_prog pkill
+    atf_require_prog kldstat
+    atf_require_prog "$(atf_get_srcdir)/sdtp_test_send"
+    atf_require_prog "$(atf_get_srcdir)/sdtp_test_recv"
+}
+
+cleanup_state()
+{
+    epair_name=""
+    [ -f "${HOME}/epair.name" ] && epair_name=$(cat "${HOME}/epair.name")
+
+    jail -r sdtp_a 2>/dev/null || true
+    jail -r sdtp_b 2>/dev/null || true
+    pkill -9 -f sdtp_test_recv 2>/dev/null || true
+    pkill -9 -f sdtp_test_send 2>/dev/null || true
+    [ -n "${epair_name}" ] && ifconfig "${epair_name}" destroy 2>/dev/null || true
+}
+
+dump_logs_on_failure()
+{
+    [ -f "${HOME}/.success" ] && return 0
+
+    for f in send.out send.err recv.out; do
+        if [ -f "${HOME}/${f}" ]; then
+            echo "===== ${f} =====" >&2
+            cat "${HOME}/${f}" >&2 || true
+        fi
+    done
+}
+
+make_payload()
+{
+    awk -v n="$1" 'BEGIN { for (i = 0; i < n; i++) printf "x" }'
+}
+
+run_ping_pong_case()
+{
+    size="$1"
+    count="$2"
+
+    require_tools
+    cleanup_state
+
+    rm -f "${HOME}/.success" \
+          "${HOME}/send.out" \
+          "${HOME}/send.err" \
+          "${HOME}/recv.out" \
+          "${HOME}/epair.name"
+
+    # TODO: We want someway to load it automatically
+    kldstat -n sdtp >/dev/null 2>&1 || atf_skip "sdtp module is not loaded"
+    kldstat -n if_epair >/dev/null 2>&1 || atf_skip "if_epair module is not loaded"
+
+    payload=$(make_payload "$size") || atf_fail "failed to build ${size}-byte payload"
+    [ "${#payload}" -eq "$size" ] || atf_fail "payload size mismatch"
+
+    epair=$(ifconfig epair create) || atf_fail "failed to create epair"
+    echo "${epair}" > "${HOME}/epair.name"
+
+    a=${epair%a}a
+    b=${epair%a}b
+
+    jail -c name=sdtp_a persist vnet || atf_fail "failed to create jail sdtp_a"
+    jail -c name=sdtp_b persist vnet || atf_fail "failed to create jail sdtp_b"
+
+    ifconfig "${a}" vnet sdtp_a || atf_fail "failed to move ${a} to sdtp_a"
+    ifconfig "${b}" vnet sdtp_b || atf_fail "failed to move ${b} to sdtp_b"
+
+    jexec sdtp_a ifconfig "${a}" inet 192.0.2.1/24 up || atf_fail "failed to configure ${a}"
+    jexec sdtp_b ifconfig "${b}" inet 192.0.2.2/24 up || atf_fail "failed to configure ${b}"
+
+    jexec sdtp_b "$(atf_get_srcdir)/sdtp_test_recv" \
+        -a 192.0.2.2 -p 9000 -n "$count" -q \
+        > "${HOME}/recv.out" 2>&1 &
+    recv_pid=$!
+
+    sleep 1
+
+    atf_check -s exit:0 -o save:"${HOME}/send.out" -e save:"${HOME}/send.err" \
+        jexec sdtp_a "$(atf_get_srcdir)/sdtp_test_send" \
+            -a 192.0.2.2 -p 9000 -n "$count" -m "$payload"
+
+    wait "$recv_pid" || atf_fail "receiver exited with failure"
+
+    touch "${HOME}/.success"
+}
+
+common_head()
+{
+    atf_set "require.user" "root"
+    atf_set "timeout" "60"
+}
+
+atf_test_case small_v4 cleanup
+small_v4_head()
+{
+    common_head
+    atf_set "descr" "SDTP ping-pong over two VNET jails with 32-byte payloads"
+}
+small_v4_body()
+{
+    run_ping_pong_case 32 "$COUNT"
+}
+small_v4_cleanup()
+{
+    dump_logs_on_failure
+    cleanup_state
+}
+
+atf_test_case medium_v4 cleanup
+medium_v4_head()
+{
+    common_head
+    atf_set "descr" "SDTP ping-pong over two VNET jails with 1024-byte payloads"
+}
+medium_v4_body()
+{
+    run_ping_pong_case 1024 "$COUNT"
+}
+medium_v4_cleanup()
+{
+    dump_logs_on_failure
+    cleanup_state
+}
+
+atf_test_case large_v4 cleanup
+large_v4_head()
+{
+    common_head
+    atf_set "descr" "SDTP ping-pong over two VNET jails with 8192-byte payloads"
+}
+large_v4_body()
+{
+    run_ping_pong_case 8192 "$COUNT"
+}
+large_v4_cleanup()
+{
+    dump_logs_on_failure
+    cleanup_state
+}
+
+atf_init_test_cases()
+{
+    atf_add_test_case small_v4
+    atf_add_test_case medium_v4
+    atf_add_test_case large_v4
+}
