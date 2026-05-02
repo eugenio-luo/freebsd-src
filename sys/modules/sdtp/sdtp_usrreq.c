@@ -373,7 +373,7 @@ sdtp_wait_for_message_found_rpc:
                 continue;
             }
 
-            if (rpc->error == 0) {
+            if (rpc->error == 0 && rpc->msgin.num_bufs > 0) {
                 if (rpc->ctx) {
                     (void) rpc->ctx;
                     // TODO: homals_copy_to_user
