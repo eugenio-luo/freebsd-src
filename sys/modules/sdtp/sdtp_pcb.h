@@ -20,6 +20,7 @@
 
 #include "sdtp_common.h"
 #include "sdtp_queue.h"
+#include "sdtp_ctx.h"
 
 struct sdtp;
 struct sdtp_inpcb;
@@ -84,8 +85,7 @@ struct sdtp_inpcb {
     struct sdtp_rpc_bucket client_rpc_buckets[SDTP_CLIENT_RPC_BUCKETS];
     struct sdtp_rpc_bucket server_rpc_buckets[SDTP_SERVER_RPC_BUCKETS];
 
-    struct sdtp_context_list ctx_buckets[SDTP_SERVER_RPC_BUCKETS];
-    void *reuse_ctx;
+    struct sdtp_ctx_map ctx_map;
 };
 
 static inline struct sdtp_inpcb *

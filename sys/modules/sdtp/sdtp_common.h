@@ -34,6 +34,7 @@
 #define MAX_SDTP_PEER               0x4000
 #define MAX_SDTP_PACKET_TAILQ_ENTRY 0x4000
 #define MAX_SDTP_PACKET_SLIST_ENTRY 0x4000
+#define MAX_SDTP_CONTEXT            0x4000
 
 #define SDTP_CLIENT_RPC_BUCKETS 1024
 #define SDTP_SERVER_RPC_BUCKETS 1024
@@ -55,7 +56,7 @@
 
 struct sdtp_rpc;
 struct sdtp_interest;
-struct sdtp_context;
+struct sdtp_ctx;
 struct sdtp_packet_tailq_entry;
 struct sdtp_packet_slist_entry;
 struct sdtp_pcbmap_link;
@@ -67,7 +68,7 @@ LIST_HEAD(sdtp_rpc_list, sdtp_rpc);
 
 TAILQ_HEAD(sdtp_interest_tailq, sdtp_interest);
 
-LIST_HEAD(sdtp_context_list, sdtp_context);
+LIST_HEAD(sdtp_ctx_list, sdtp_ctx);
 
 TAILQ_HEAD(sdtp_packet_tailq, sdtp_packet_tailq_entry);
 SLIST_HEAD(sdtp_packet_slist, sdtp_packet_slist_entry);

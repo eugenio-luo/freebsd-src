@@ -180,6 +180,7 @@ struct sdtp_zones {
     } packet_tailq;
 
     sdtp_zone_t sdtp_zone_packet_slist_entry;
+    sdtp_zone_t sdtp_zone_context;
 };
 
 static inline struct sdtp_rpc_bucket *

@@ -10,6 +10,7 @@
 #include "sdtp_structs.h"
 #include "sdtp_os.h"
 #include "sdtp.h"
+#include "sdtp_ctx.h"
 #include "sdtp_debug.h"
 
 #ifdef SDTP_TEST
@@ -62,6 +63,8 @@ sdtp_zone_init(void)
         sizeof(struct sdtp_packet_tailq_entry), MAX_SDTP_PACKET_TAILQ_ENTRY);
     SDTP_ZONE_INIT(zones.sdtp_zone_packet_slist_entry, "sdtp_packet_slist_entry",
         sizeof(struct sdtp_packet_slist_entry), MAX_SDTP_PACKET_SLIST_ENTRY);
+    SDTP_ZONE_INIT(zones.sdtp_zone_context, "sdtp_context",
+        sizeof(struct sdtp_ctx), MAX_SDTP_CONTEXT);
 
     TAILQ_INIT(&zones.packet_tailq.entries);
 	mtx_init(&zones.packet_tailq.spinlock, "sdtp packet tailq spinlock", NULL, MTX_SPIN);
@@ -334,6 +337,7 @@ int sdtp_exit(struct sdtp *sdtp)
     SDTP_ZONE_DESTROY(zones.sdtp_zone_peer);
     SDTP_ZONE_DESTROY(zones.packet_tailq.sdtp_zone_entry);
     SDTP_ZONE_DESTROY(zones.sdtp_zone_packet_slist_entry);
+    SDTP_ZONE_DESTROY(zones.sdtp_zone_context);
 
     sysctl_ctx_free(&sdtp->metrics.sysctl_ctx);
 

@@ -125,7 +125,7 @@ sdtp_inpcb_alloc(struct socket *so, struct sdtp *sdtp)
     for (i = 0; i < SDTP_SERVER_RPC_BUCKETS; i++) {
         struct sdtp_rpc_bucket *bucket = &inp->server_rpc_buckets[i];
         SDTP_LIST_INIT(&bucket->rpcs);
-        LIST_INIT(&inp->ctx_buckets[i]);
+        LIST_INIT(&inp->ctx_map.buckets[i]);
     }
 
     SDTP_QUEUE_INIT(&inp->active_rpcs);
@@ -135,7 +135,7 @@ sdtp_inpcb_alloc(struct socket *so, struct sdtp *sdtp)
     SDTP_LIST_INIT(&inp->ready_responses);
     SDTP_QUEUE_INIT(&inp->request_interests);
     SDTP_QUEUE_INIT(&inp->response_interests);
-	inp->reuse_ctx = NULL;
+    inp->ctx_map.reuse_ctx = NULL;
 
     mtx_lock_spin(&pcbmap->write_spinlock);
  
