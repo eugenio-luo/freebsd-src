@@ -7,26 +7,26 @@
  * under sponsorship from the FreeBSD Foundation.
  */
 
-#include <sys/cdefs.h>
 #include "opt_inet.h"
 #include "opt_inet6.h"
 
+#include <sys/cdefs.h>
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
+#include <sys/kthread.h>
 #include <sys/module.h>
 #include <sys/protosw.h>
 #include <sys/socket.h>
-#include <sys/kthread.h>
-#include <sys/unistd.h>
 #include <sys/sysctl.h>
+#include <sys/unistd.h>
 
 #include <netinet/in.h>
 #include <netinet/ip_var.h>
 #include <netinet6/ip6_var.h>
 
-#include "sdtp_structs.h"
 #include "sdtp_input.h"
+#include "sdtp_structs.h"
 
 struct sdtp sdtp_data;
 struct sdtp *sdtp = &sdtp_data;
@@ -50,35 +50,33 @@ sdtp_module_load(void)
 		return (error);
 #endif
 #ifdef INET6
-    error = protosw_register(&inet6domain, &sdtp6_protosw);
-    if (error != 0)
+	error = protosw_register(&inet6domain, &sdtp6_protosw);
+	if (error != 0)
 		return (error);
 	error = ip6proto_register(IPPROTO_SDTP, sdtp6_input, sdtp6_ctlinput);
-    if (error != 0)
+	if (error != 0)
 		return (error);
 #endif
 
-    /*	
-    error = kthread_add(&sdtp_timer_main, NULL, NULL, &timer_kthread, 0, 0, "sdtp_timer");
-    if (error != 0) {
-        timer_kthread = NULL;
-        return (error);
-    }
-    */
-    // sched_add(timer_kthread, SRQ_BORING);
+	/*
+	 * error = kthread_add(&sdtp_timer_main, NULL, NULL, &timer_kthread, 0, 0,
+	 * "sdtp_timer"); if (error != 0) { timer_kthread = NULL; return (error);
+	 * }
+	 */
+	// sched_add(timer_kthread, SRQ_BORING);
 
-    error = sdtp_init(sdtp);
+	error = sdtp_init(sdtp);
 	// error = sdtp_syscalls_init();
-	return error;
+	return (error);
 }
 
 static int
 sdtp_module_unload(void)
 {
-    int error = 0;
-    existing = true;
+	int error = 0;
+	existing = true;
 
-    error = sdtp_exit(sdtp);
+	error = sdtp_exit(sdtp);
 #ifdef INET
 	(void)ipproto_unregister(IPPROTO_SDTP);
 	(void)protosw_unregister(&sdtp_protosw);
@@ -88,7 +86,7 @@ sdtp_module_unload(void)
 	(void)protosw_unregister(&sdtp6_protosw);
 #endif
 
-    return error;
+	return (error);
 }
 
 static int
@@ -98,7 +96,7 @@ sdtp_modload(struct module *module, int cmd, void *arg)
 
 	switch (cmd) {
 	case MOD_LOAD:
-        error = sdtp_module_load();
+		error = sdtp_module_load();
 		break;
 	case MOD_UNLOAD:
 		error = sdtp_module_unload();

@@ -10,8 +10,6 @@
 #ifndef _SDTP_RECEIVER_H_
 #define _SDTP_RECEIVER_H_
 
-struct sdtp_receiver {
-    
-};
+struct sdtp_receiver { };
 
 #endif

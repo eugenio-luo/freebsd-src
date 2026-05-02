@@ -15,7 +15,6 @@
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/ip_icmp.h>
-
 #include <netinet6/ip6_var.h>
 
 int sdtp_input(struct mbuf **mp, int *offp, int proto);

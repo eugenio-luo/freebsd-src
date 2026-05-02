@@ -18,24 +18,22 @@ struct sdtp_inpcb;
 struct sdtp_rpc;
 
 struct sdtp_ctx {
+	uint8_t tx_conf:3;
+	uint8_t rx_conf:3;
 
-    uint8_t tx_conf : 3;
-    uint8_t rx_conf : 3;
+	struct tls_enable tls_send;
+	struct tls_enable tls_recv;
 
-    struct tls_enable tls_send;
-    struct tls_enable tls_recv;
+	uint32_t addr_be;
+	uint32_t port_be;
 
-    uint32_t addr_be;
-    uint32_t port_be;
-
-    void *offload_tx;
-    void *offload_rx;
+	void *offload_tx;
+	void *offload_rx;
 };
 
 struct sdtp_ctx_map {
-
-    struct sdtp_ctx_list buckets[SDTP_SERVER_RPC_BUCKETS];
-    struct sdtp_ctx *reuse_ctx;
+	struct sdtp_ctx_list buckets[SDTP_SERVER_RPC_BUCKETS];
+	struct sdtp_ctx *reuse_ctx;
 };
 
 int sdtp_rpc_ctx_init(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc);

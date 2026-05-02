@@ -1,33 +1,36 @@
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+
+#include <netinet/in.h>
+
 #include <arpa/inet.h>
 #include <errno.h>
 #include <inttypes.h>
-#include <netinet/in.h>
-#include <stdio.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
-#include <sys/time.h>
-#include <sys/types.h>
 #include <unistd.h>
 
-#define IPPROTO_SDTP 146
-#define SDTP_CMSG_TYPE 1
+#define IPPROTO_SDTP		146
+#define SDTP_CMSG_TYPE		1
 
 #define SDTP_MAX_MESSAGE_LENGTH 1000000
-#define SDTP_BPAGE_SHIFT 16
-#define SDTP_BPAGE_SIZE (1 << SDTP_BPAGE_SHIFT)
-#define SDTP_MAX_BPAGES ((SDTP_MAX_MESSAGE_LENGTH + SDTP_BPAGE_SIZE - 1) >> SDTP_BPAGE_SHIFT)
+#define SDTP_BPAGE_SHIFT	16
+#define SDTP_BPAGE_SIZE		(1 << SDTP_BPAGE_SHIFT)
+#define SDTP_MAX_BPAGES \
+	((SDTP_MAX_MESSAGE_LENGTH + SDTP_BPAGE_SIZE - 1) >> SDTP_BPAGE_SHIFT)
 
-#define SDTP_RECVMSG_REQUEST       0x01
-#define SDTP_RECVMSG_RESPONSE      0x02
-#define SDTP_RECVMSG_NONBLOCKING   0x04
-#define SDTP_RECVMSG_VALID_FLAGS   0x07
+#define SDTP_RECVMSG_REQUEST	 0x01
+#define SDTP_RECVMSG_RESPONSE	 0x02
+#define SDTP_RECVMSG_NONBLOCKING 0x04
+#define SDTP_RECVMSG_VALID_FLAGS 0x07
 
 struct sdtp_recvmsg_args {
 	uint64_t id;
 	uint64_t completion_cookie;
-	int      flags;
+	int flags;
 	uint32_t num_bpages;
 	uint32_t _pad[2];
 	uint32_t bpage_offsets[SDTP_MAX_BPAGES];
@@ -117,9 +120,8 @@ extract_recv_args(struct msghdr *msg, struct sdtp_recvmsg_args *out)
 {
 	struct cmsghdr *cmsg;
 
-	for (cmsg = CMSG_FIRSTHDR(msg);
-	     cmsg != NULL;
-	     cmsg = CMSG_NXTHDR(msg, cmsg)) {
+	for (cmsg = CMSG_FIRSTHDR(msg); cmsg != NULL;
+	    cmsg = CMSG_NXTHDR(msg, cmsg)) {
 		if (cmsg->cmsg_level == IPPROTO_SDTP &&
 		    cmsg->cmsg_type == SDTP_CMSG_TYPE &&
 		    cmsg->cmsg_len >= CMSG_LEN(sizeof(*out))) {
@@ -175,8 +177,8 @@ send_one(int fd, struct sockaddr_in *peer, char *message,
 		return (-1);
 	}
 	if ((size_t)sent != msglen) {
-		fprintf(stderr, "short send: sent=%zd expected=%zu\n",
-		    sent, msglen);
+		fprintf(stderr, "short send: sent=%zd expected=%zu\n", sent,
+		    msglen);
 		return (-1);
 	}
 
@@ -273,7 +275,8 @@ main(int argc, char **argv)
 			break;
 		case 'p':
 			if (parse_u16(optarg, &peer_port) != 0) {
-				fprintf(stderr, "invalid peer port: %s\n", optarg);
+				fprintf(stderr, "invalid peer port: %s\n",
+				    optarg);
 				return (2);
 			}
 			break;
@@ -285,19 +288,23 @@ main(int argc, char **argv)
 			break;
 		case 'l':
 			if (parse_u16(optarg, &local_port) != 0) {
-				fprintf(stderr, "invalid local port: %s\n", optarg);
+				fprintf(stderr, "invalid local port: %s\n",
+				    optarg);
 				return (2);
 			}
 			break;
 		case 'c':
 			if (parse_u64(optarg, &completion_cookie_base) != 0) {
-				fprintf(stderr, "invalid completion cookie: %s\n", optarg);
+				fprintf(stderr,
+				    "invalid completion cookie: %s\n", optarg);
 				return (2);
 			}
 			break;
 		case 't':
-			if (parse_int_range(optarg, 1, 3600, &timeout_secs) != 0) {
-				fprintf(stderr, "invalid timeout: %s\n", optarg);
+			if (parse_int_range(optarg, 1, 3600, &timeout_secs) !=
+			    0) {
+				fprintf(stderr, "invalid timeout: %s\n",
+				    optarg);
 				return (2);
 			}
 			break;
@@ -366,7 +373,7 @@ main(int argc, char **argv)
 
 	for (int i = 0; i < count; i++) {
 		if (send_one(fd, &peer, message,
-		    completion_cookie_base + (uint64_t)i) != 0) {
+			completion_cookie_base + (uint64_t)i) != 0) {
 			close(fd);
 			return (1);
 		}

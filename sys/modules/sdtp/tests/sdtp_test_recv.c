@@ -1,32 +1,35 @@
+#include <sys/types.h>
+#include <sys/socket.h>
+
+#include <netinet/in.h>
+
 #include <arpa/inet.h>
 #include <errno.h>
 #include <inttypes.h>
-#include <netinet/in.h>
-#include <stdio.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
-#include <sys/types.h>
 #include <unistd.h>
 
-#define IPPROTO_SDTP 146
-#define SDTP_CMSG_TYPE 1
+#define IPPROTO_SDTP		146
+#define SDTP_CMSG_TYPE		1
 
 #define SDTP_MAX_MESSAGE_LENGTH 1000000
-#define SDTP_BPAGE_SHIFT 16
-#define SDTP_BPAGE_SIZE (1 << SDTP_BPAGE_SHIFT)
-#define SDTP_MAX_BPAGES ((SDTP_MAX_MESSAGE_LENGTH + SDTP_BPAGE_SIZE - 1) >> SDTP_BPAGE_SHIFT)
+#define SDTP_BPAGE_SHIFT	16
+#define SDTP_BPAGE_SIZE		(1 << SDTP_BPAGE_SHIFT)
+#define SDTP_MAX_BPAGES \
+	((SDTP_MAX_MESSAGE_LENGTH + SDTP_BPAGE_SIZE - 1) >> SDTP_BPAGE_SHIFT)
 
-#define SDTP_RECVMSG_REQUEST       0x01
-#define SDTP_RECVMSG_RESPONSE      0x02
-#define SDTP_RECVMSG_NONBLOCKING   0x04
-#define SDTP_RECVMSG_VALID_FLAGS   0x07
+#define SDTP_RECVMSG_REQUEST	 0x01
+#define SDTP_RECVMSG_RESPONSE	 0x02
+#define SDTP_RECVMSG_NONBLOCKING 0x04
+#define SDTP_RECVMSG_VALID_FLAGS 0x07
 
 struct sdtp_recvmsg_args {
 	uint64_t id;
 	uint64_t completion_cookie;
-	int      flags;
+	int flags;
 	uint32_t num_bpages;
 	uint32_t _pad[2];
 	uint32_t bpage_offsets[SDTP_MAX_BPAGES];
@@ -94,9 +97,8 @@ extract_recv_args(struct msghdr *msg, struct sdtp_recvmsg_args *out)
 {
 	struct cmsghdr *cmsg;
 
-	for (cmsg = CMSG_FIRSTHDR(msg);
-	     cmsg != NULL;
-	     cmsg = CMSG_NXTHDR(msg, cmsg)) {
+	for (cmsg = CMSG_FIRSTHDR(msg); cmsg != NULL;
+	    cmsg = CMSG_NXTHDR(msg, cmsg)) {
 		if (cmsg->cmsg_level == IPPROTO_SDTP &&
 		    cmsg->cmsg_type == SDTP_CMSG_TYPE &&
 		    cmsg->cmsg_len >= CMSG_LEN(sizeof(*out))) {
@@ -209,7 +211,8 @@ main(int argc, char **argv)
 		}
 
 		if (extract_recv_args(&msg, &recv_args) != 0) {
-			fprintf(stderr, "missing SDTP control message in request\n");
+			fprintf(stderr,
+			    "missing SDTP control message in request\n");
 			close(fd);
 			return (1);
 		}
@@ -233,7 +236,8 @@ main(int argc, char **argv)
 			memset(&reply, 0, sizeof(reply));
 
 			send_args.id = recv_args.id;
-			send_args.completion_cookie = recv_args.completion_cookie;
+			send_args.completion_cookie =
+			    recv_args.completion_cookie;
 
 			send_iov.iov_base = data_buf;
 			send_iov.iov_len = (size_t)n;
@@ -259,8 +263,9 @@ main(int argc, char **argv)
 				return (1);
 			}
 			if (sent != n) {
-				fprintf(stderr, "short send: sent=%zd expected=%zd\n",
-				    sent, n);
+				fprintf(stderr,
+				    "short send: sent=%zd expected=%zd\n", sent,
+				    n);
 				close(fd);
 				return (1);
 			}

@@ -13,23 +13,25 @@
 #include <sys/refcount.h>
 
 #define SDTP_DEFINE_EXPECTED_TYPE(NAME, T) \
-    struct sdtp_expected_##NAME { \
-        T value; \
-        int error; \
-    }; \
+	struct sdtp_expected_##NAME {      \
+		T value;                   \
+		int error;                 \
+	};
 
 #define SDTP_MAKE_UNEXPECTED(EXP_T, ERR) \
-    ( EXP_T ) { \
-        .error = (ERR), \
-    } \
+	(EXP_T)                          \
+	{                                \
+		.error = (ERR),          \
+	}
 
-#define SDTP_MAKE_EXPECTED(EXP_T, V) \
-    ( EXP_T ) { \
-        .value = (V), .error = 0, \
-    } \
+#define SDTP_MAKE_EXPECTED(EXP_T, V)      \
+	(EXP_T)                           \
+	{                                 \
+		.value = (V), .error = 0, \
+	}
 
-#define SDTP_IS_ERROR(EXP_VAL) ((EXP_VAL).error != 0)
-#define SDTP_GET_VAL(EXP_VAL) ((EXP_VAL).value)
+#define SDTP_IS_ERROR(EXP_VAL)	((EXP_VAL).error != 0)
+#define SDTP_GET_VAL(EXP_VAL)	((EXP_VAL).value)
 #define SDTP_GET_ERROR(EXP_VAL) ((EXP_VAL).error)
 
 typedef volatile u_int sdtp_ref_t;
