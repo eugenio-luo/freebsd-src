@@ -244,8 +244,10 @@ typedef enum {
 	KTLS_MBUF_CRYPTO_ST_DECRYPTED = -1,
 } ktls_mbuf_crypto_st_t;
 
+bool ktls_offload_enabled(void);
 void ktls_check_rx(struct sockbuf *sb);
 void ktls_cleanup_tls_enable(struct tls_enable *tls);
+int __ktls_copyin_tls_enable(struct sockopt *sopt, struct tls_enable *tls);
 int ktls_copyin_tls_enable(struct sockopt *sopt, struct tls_enable *tls);
 void ktls_disable_ifnet(void *arg);
 int ktls_enable_rx(struct socket *so, struct tls_enable *en);
@@ -268,6 +270,8 @@ bool ktls_pending_rx_info(struct sockbuf *sb, uint64_t *seqnop, size_t *residp);
 bool ktls_permit_empty_frames(struct ktls_session *tls);
 void ktls_seq(struct sockbuf *sb, struct mbuf *m);
 int ktls_set_tx_mode(struct socket *so, int mode);
+int ktls_create_session(struct socket *so, struct tls_enable *en,
+			struct ktls_session **tlsp, int direction);
 
 static inline struct ktls_session *
 ktls_hold(struct ktls_session *tls)

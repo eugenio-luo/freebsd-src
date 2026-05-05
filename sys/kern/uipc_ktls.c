@@ -302,34 +302,19 @@ static void ktls_reset_receive_tag(void *context, int pending);
 static void ktls_reset_send_tag(void *context, int pending);
 static void ktls_work_thread(void *ctx);
 
-int
-ktls_copyin_tls_enable(struct sockopt *sopt, struct tls_enable *tls)
+bool
+ktls_offload_enabled(void)
 {
-	struct tls_enable_v0 tls_v0;
+	return ktls_offload_enable;
+}
+
+int
+__ktls_copyin_tls_enable(struct sockopt *sopt, struct tls_enable *tls)
+{
+	KASSERT(tls != NULL, ("%s: tls must be valid", __func__));
+
 	int error;
 	uint8_t *cipher_key = NULL, *iv = NULL, *auth_key = NULL;
-
-	if (sopt->sopt_valsize == sizeof(tls_v0)) {
-		error = sooptcopyin(sopt, &tls_v0, sizeof(tls_v0), sizeof(tls_v0));
-		if (error != 0)
-			goto done;
-		memset(tls, 0, sizeof(*tls));
-		tls->cipher_key = tls_v0.cipher_key;
-		tls->iv = tls_v0.iv;
-		tls->auth_key = tls_v0.auth_key;
-		tls->cipher_algorithm = tls_v0.cipher_algorithm;
-		tls->cipher_key_len = tls_v0.cipher_key_len;
-		tls->iv_len = tls_v0.iv_len;
-		tls->auth_algorithm = tls_v0.auth_algorithm;
-		tls->auth_key_len = tls_v0.auth_key_len;
-		tls->flags = tls_v0.flags;
-		tls->tls_vmajor = tls_v0.tls_vmajor;
-		tls->tls_vminor = tls_v0.tls_vminor;
-	} else
-		error = sooptcopyin(sopt, tls, sizeof(*tls), sizeof(*tls));
-
-	if (error != 0)
-		return (error);
 
 	if (tls->cipher_key_len < 0 || tls->cipher_key_len > TLS_MAX_PARAM_SIZE)
 		return (EINVAL);
@@ -391,6 +376,37 @@ done:
 	}
 
 	return (error);
+}
+
+int
+ktls_copyin_tls_enable(struct sockopt *sopt, struct tls_enable *tls)
+{
+	struct tls_enable_v0 tls_v0;
+	int error;
+
+	if (sopt->sopt_valsize == sizeof(tls_v0)) {
+		error = sooptcopyin(sopt, &tls_v0, sizeof(tls_v0), sizeof(tls_v0));
+		if (error != 0)
+			return (error);
+		memset(tls, 0, sizeof(*tls));
+		tls->cipher_key = tls_v0.cipher_key;
+		tls->iv = tls_v0.iv;
+		tls->auth_key = tls_v0.auth_key;
+		tls->cipher_algorithm = tls_v0.cipher_algorithm;
+		tls->cipher_key_len = tls_v0.cipher_key_len;
+		tls->iv_len = tls_v0.iv_len;
+		tls->auth_algorithm = tls_v0.auth_algorithm;
+		tls->auth_key_len = tls_v0.auth_key_len;
+		tls->flags = tls_v0.flags;
+		tls->tls_vmajor = tls_v0.tls_vmajor;
+		tls->tls_vminor = tls_v0.tls_vminor;
+	} else
+		error = sooptcopyin(sopt, tls, sizeof(*tls), sizeof(*tls));
+
+	if (error != 0)
+		return (error);
+
+	return __ktls_copyin_tls_enable(sopt, tls);
 }
 
 void
@@ -595,7 +611,7 @@ start:
 	return (error);
 }
 
-static int
+int
 ktls_create_session(struct socket *so, struct tls_enable *en,
     struct ktls_session **tlsp, int direction)
 {
