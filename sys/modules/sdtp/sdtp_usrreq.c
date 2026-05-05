@@ -878,6 +878,11 @@ sdtp_setsockopt(struct sdtp_inpcb *pcb, struct sockopt *sopt)
 	}
 
 	switch (sopt->sopt_name) {
+	case SDTP_TXTLS_ENABLE:
+	case SDTP_RXTLS_ENABLE:
+		error = sdtp_ctx_enable(pcb, sopt,
+		    sopt->sopt_name == SDTP_TXTLS_ENABLE);
+		break;
 
 	default:
 		error = ENOPROTOOPT;

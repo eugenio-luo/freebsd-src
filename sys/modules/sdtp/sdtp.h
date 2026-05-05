@@ -28,6 +28,11 @@ enum sdtp_pkt_type {
 	SDTP_ACK = 0x18,
 };
 
+enum sdtp_optname {
+	SDTP_TXTLS_ENABLE = 31,
+	SDTP_RXTLS_ENABLE = 32,
+};
+
 struct sdtp_sendmsg_args {
 	uint64_t id;
 	uint64_t completion_cookie;
