@@ -168,18 +168,23 @@ struct sdtp {
 
 typedef struct uma_zone *sdtp_zone_t;
 
+#define DEFINE_SDTP_POOL(NAME, HEAD_TYPE)    \
+struct NAME {                                \
+        sdtp_zone_t zone;                    \
+        HEAD_TYPE entries;                   \
+        struct mtx spinlock;                 \
+}
+
+DEFINE_SDTP_POOL(sdtp_packet_tailq_pool, struct sdtp_packet_tailq);
+DEFINE_SDTP_POOL(sdtp_ctx_pool, struct sdtp_ctx_list);
+
 struct sdtp_zones {
 	sdtp_zone_t sdtp_zone_rpc;
 	sdtp_zone_t sdtp_zone_peer;
-
-	struct {
-		sdtp_zone_t sdtp_zone_entry;
-		struct sdtp_packet_tailq entries;
-		struct mtx spinlock;
-	} packet_tailq;
-
 	sdtp_zone_t sdtp_zone_packet_slist_entry;
-	sdtp_zone_t sdtp_zone_context;
+
+	struct sdtp_packet_tailq_pool packet_tailq_pool;
+	struct sdtp_ctx_pool          ctx_pool;
 };
 
 static inline struct sdtp_rpc_bucket *
@@ -206,8 +211,11 @@ int sdtp_init(struct sdtp *sdtp);
 int sdtp_exit(struct sdtp *sdtp);
 void sdtp_interest_init(struct sdtp_interest *interest);
 
-struct sdtp_packet_tailq_entry *sdtp_alloc_packet_tailq_entry(void);
-void sdtp_free_packet_tailq_entry(struct sdtp_packet_tailq_entry *entry);
+struct sdtp_packet_tailq_entry *sdtp_pool_alloc_packet_tailq_entry(void);
+void sdtp_pool_free_packet_tailq_entry(struct sdtp_packet_tailq_entry *entry);
+
+struct sdtp_ctx *sdtp_pool_alloc_ctx(void);
+void sdtp_pool_free_ctx(struct sdtp_ctx *ctx);
 
 #define SDTP_METRIC(PCB, FIELD, VAL)                               \
 	do {                                                       \

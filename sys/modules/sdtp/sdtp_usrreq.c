@@ -216,7 +216,7 @@ sdtp_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc)
 		bufs[n] = buf;
 		++n;
 		TAILQ_REMOVE(&rpc->msgin.packets, buf_entry, link);
-		sdtp_free_packet_tailq_entry(buf_entry);
+		sdtp_pool_free_packet_tailq_entry(buf_entry);
 
 		--rpc->msgin.num_bufs;
 		rpc->msgin.copied_out = segment_offset + buf->m_pkthdr.len -

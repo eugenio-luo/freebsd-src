@@ -44,56 +44,143 @@ int sdtp_header_lengths[] = {
 };
 
 static int
+sdtp_packet_tailq_pool_init(struct sdtp_packet_tailq_pool *pool)
+{
+	struct sdtp_packet_tailq_entry *entry, *tmp;
+	int i;
+
+	SDTP_ZONE_INIT(pool->zone, "sdtp_packet_tailq_entry",
+		sizeof(struct sdtp_packet_tailq_entry), MAX_SDTP_PACKET_TAILQ_ENTRY);
+	TAILQ_INIT(&pool->entries);
+	mtx_init(&pool->spinlock, "sdtp packet tailq spinlock",
+	    NULL, MTX_SPIN);
+
+	for (i = 0; i < MAX_SDTP_PACKET_TAILQ_ENTRY; ++i) {
+		entry = SDTP_ZONE_GET(pool->zone, struct sdtp_packet_tailq_entry);
+		if (entry == NULL) {
+			goto sdtp_packet_tailq_init_error;
+		}
+		TAILQ_INSERT_HEAD(&pool->entries, entry, link);
+	}
+
+	return (0);
+
+sdtp_packet_tailq_init_error:
+	TAILQ_FOREACH_SAFE(entry, &pool->entries, link, tmp) {
+		TAILQ_REMOVE(&pool->entries, entry, link);
+		SDTP_ZONE_FREE(pool->zone, entry);
+	}
+	mtx_destroy(&pool->spinlock);
+	return (ENOMEM);
+}
+
+static int
+sdtp_ctx_pool_init(struct sdtp_ctx_pool *pool)
+{
+        struct sdtp_ctx *ctx;
+        int i;
+
+        SDTP_ZONE_INIT(pool->zone, "sdtp_ctx",
+            sizeof(struct sdtp_ctx), MAX_SDTP_CONTEXT);
+        LIST_INIT(&pool->entries);
+        mtx_init(&pool->spinlock, "sdtp ctx pool spinlock",
+            NULL, MTX_SPIN);
+
+        for (i = 0; i < MAX_SDTP_CONTEXT; ++i) {
+                ctx = SDTP_ZONE_GET(pool->zone, struct sdtp_ctx);
+                if (ctx == NULL) {
+                        goto sdtp_ctx_pool_init_error;
+		}
+
+                LIST_INSERT_HEAD(&pool->entries, ctx, hash_links);
+        }
+
+        return (0);
+
+sdtp_ctx_pool_init_error:
+	while ((ctx = LIST_FIRST(&pool->entries)) != NULL) {
+                LIST_REMOVE(ctx, hash_links);
+                SDTP_ZONE_FREE(pool->zone, ctx);
+        }
+        mtx_destroy(&pool->spinlock);
+        return (ENOMEM);
+}
+
+static int
 sdtp_zone_init(void)
 {
-	struct sdtp_packet_tailq_entry *entry;
-	int i;
+	int error;
 
 	SDTP_ZONE_INIT(zones.sdtp_zone_rpc, "sdtp_rpc", sizeof(struct sdtp_rpc),
 	    MAX_SDTP_RPC);
 	SDTP_ZONE_INIT(zones.sdtp_zone_peer, "sdtp_peer",
 	    sizeof(struct sdtp_peer), MAX_SDTP_PEER);
-	SDTP_ZONE_INIT(zones.packet_tailq.sdtp_zone_entry,
-	    "sdtp_packet_tailq_entry", sizeof(struct sdtp_packet_tailq_entry),
-	    MAX_SDTP_PACKET_TAILQ_ENTRY);
 	SDTP_ZONE_INIT(zones.sdtp_zone_packet_slist_entry,
 	    "sdtp_packet_slist_entry", sizeof(struct sdtp_packet_slist_entry),
 	    MAX_SDTP_PACKET_SLIST_ENTRY);
-	SDTP_ZONE_INIT(zones.sdtp_zone_context, "sdtp_context",
-	    sizeof(struct sdtp_ctx), MAX_SDTP_CONTEXT);
 
-	TAILQ_INIT(&zones.packet_tailq.entries);
-	mtx_init(&zones.packet_tailq.spinlock, "sdtp packet tailq spinlock",
-	    NULL, MTX_SPIN);
-	for (i = 0; i < MAX_SDTP_PACKET_TAILQ_ENTRY; ++i) {
-		entry = SDTP_ZONE_GET(zones.packet_tailq.sdtp_zone_entry,
-		    struct sdtp_packet_tailq_entry);
-		TAILQ_INSERT_HEAD(&zones.packet_tailq.entries, entry, link);
+	error = sdtp_packet_tailq_pool_init(&zones.packet_tailq_pool);
+	if (error != 0) {
+		return (error);
+	}
+	error = sdtp_ctx_pool_init(&zones.ctx_pool);
+	if (error != 0) {
+		return (error);
 	}
 
-	return 0;
+	return error;
 }
 
 struct sdtp_packet_tailq_entry *
-sdtp_alloc_packet_tailq_entry(void)
+sdtp_pool_alloc_packet_tailq_entry(void)
 {
 	struct sdtp_packet_tailq_entry *entry;
 
-	mtx_lock_spin(&zones.packet_tailq.spinlock);
-	entry = TAILQ_FIRST(&zones.packet_tailq.entries);
-	TAILQ_REMOVE(&zones.packet_tailq.entries, entry, link);
-	mtx_unlock_spin(&zones.packet_tailq.spinlock);
+	mtx_lock_spin(&zones.packet_tailq_pool.spinlock);
+	entry = TAILQ_FIRST(&zones.packet_tailq_pool.entries);
+	if (entry != NULL) {
+		TAILQ_REMOVE(&zones.packet_tailq_pool.entries, entry, link);
+	}
+	mtx_unlock_spin(&zones.packet_tailq_pool.spinlock);
 
 	return entry;
 }
 
 void
-sdtp_free_packet_tailq_entry(struct sdtp_packet_tailq_entry *entry)
+sdtp_pool_free_packet_tailq_entry(struct sdtp_packet_tailq_entry *entry)
 {
-	mtx_lock_spin(&zones.packet_tailq.spinlock);
+	KASSERT(entry != NULL, ("%s: entry must be valid", __func__));
+
+	mtx_lock_spin(&zones.packet_tailq_pool.spinlock);
 	memset(entry, 0, sizeof(struct sdtp_packet_tailq_entry));
-	TAILQ_INSERT_HEAD(&zones.packet_tailq.entries, entry, link);
-	mtx_unlock_spin(&zones.packet_tailq.spinlock);
+	TAILQ_INSERT_HEAD(&zones.packet_tailq_pool.entries, entry, link);
+	mtx_unlock_spin(&zones.packet_tailq_pool.spinlock);
+}
+
+struct sdtp_ctx *
+sdtp_pool_alloc_ctx(void)
+{
+	struct sdtp_ctx *ctx;
+
+	mtx_lock_spin(&zones.ctx_pool.spinlock);
+	ctx = LIST_FIRST(&zones.ctx_pool.entries);
+	if (ctx != NULL) {
+		LIST_REMOVE(ctx, hash_links);
+	}
+	mtx_unlock_spin(&zones.ctx_pool.spinlock);
+
+	return ctx;
+}
+
+void
+sdtp_pool_free_ctx(struct sdtp_ctx *ctx)
+{
+	KASSERT(ctx != NULL, ("%s: ctx must be valid", __func__));
+
+	mtx_lock_spin(&zones.ctx_pool.spinlock);
+	memset(ctx, 0, sizeof(struct sdtp_ctx));
+	LIST_INSERT_HEAD(&zones.ctx_pool.entries, ctx, hash_links);
+	mtx_unlock_spin(&zones.ctx_pool.spinlock);
 }
 
 static int
@@ -382,9 +469,9 @@ sdtp_exit(struct sdtp *sdtp)
 {
 	SDTP_ZONE_DESTROY(zones.sdtp_zone_rpc);
 	SDTP_ZONE_DESTROY(zones.sdtp_zone_peer);
-	SDTP_ZONE_DESTROY(zones.packet_tailq.sdtp_zone_entry);
+	SDTP_ZONE_DESTROY(zones.packet_tailq_pool.zone);
 	SDTP_ZONE_DESTROY(zones.sdtp_zone_packet_slist_entry);
-	SDTP_ZONE_DESTROY(zones.sdtp_zone_context);
+	SDTP_ZONE_DESTROY(zones.ctx_pool.zone);
 
 	sysctl_ctx_free(&sdtp->metrics.sysctl_ctx);
 

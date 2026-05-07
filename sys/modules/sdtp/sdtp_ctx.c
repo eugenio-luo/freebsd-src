@@ -103,7 +103,7 @@ sdtp_get_ctx(struct sdtp_inpcb *pcb, uint32_t peer_addr_be, uint16_t peer_port_b
 	bucket = sdtp_get_ctx_bucket(pcb, peer_addr_be, peer_port_be);
 	ctx = __sdtp_find_ctx(bucket, peer_addr_be, peer_port_be);
 	if (ctx == NULL) {
-		ctx = SDTP_ZONE_GET(zones.sdtp_zone_context, struct sdtp_ctx);
+		ctx = sdtp_pool_alloc_ctx();
 		if (ctx == NULL) {
 			*error = ENOMEM;
 			return (NULL);
@@ -122,7 +122,7 @@ sdtp_free_ctx(struct sdtp_ctx *ctx)
 
 	LIST_REMOVE(ctx, hash_links);
 	explicit_bzero(ctx, sizeof(*ctx));
-	SDTP_ZONE_FREE(zones.sdtp_zone_context, ctx);
+	sdtp_pool_free_ctx(ctx);
 }
 
 int

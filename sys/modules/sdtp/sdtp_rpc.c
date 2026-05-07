@@ -485,7 +485,7 @@ sdtp_add_packet(struct mbuf *m, struct sdtp_rpc *rpc,
 		// TODO: homa_freeze()
 	}
 
-	new = sdtp_alloc_packet_tailq_entry();
+	new = sdtp_pool_alloc_packet_tailq_entry();
 	new->data = m;
 
 	if (packet) {
@@ -739,7 +739,7 @@ sdtp_rpc_reap(struct sdtp_inpcb *pcb, bool reap_all)
 		sdtp_pcb_debug(pcb, "reap %d in packets", num_in_pkts);
 		for (int i = 0; i < num_in_pkts; ++i) {
 			m_freem(in_pkts[i]->data);
-			sdtp_free_packet_tailq_entry(in_pkts[i]);
+			sdtp_pool_free_packet_tailq_entry(in_pkts[i]);
 			SDTP_METRIC(pcb, freed_recv_pkts_atomic, 1);
 		}
 
