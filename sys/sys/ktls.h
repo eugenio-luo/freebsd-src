@@ -272,6 +272,8 @@ void ktls_seq(struct sockbuf *sb, struct mbuf *m);
 int ktls_set_tx_mode(struct socket *so, int mode);
 int ktls_create_session(struct socket *so, struct tls_enable *en,
 			struct ktls_session **tlsp, int direction);
+int ktls_try_ifnet(struct socket *so, struct ktls_session *tls, int direction, bool force);
+void ktls_use_sw(struct ktls_session *tls);
 
 static inline struct ktls_session *
 ktls_hold(struct ktls_session *tls)

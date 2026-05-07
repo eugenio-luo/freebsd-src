@@ -1095,7 +1095,7 @@ out:
 	return (error);
 }
 
-static int
+int
 ktls_try_ifnet(struct socket *so, struct ktls_session *tls, int direction,
     bool force)
 {
@@ -1138,7 +1138,7 @@ done:
 	return (error);
 }
 
-static void
+void
 ktls_use_sw(struct ktls_session *tls)
 {
 	tls->mode = TCP_TLS_MODE_SW;
