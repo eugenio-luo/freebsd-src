@@ -73,10 +73,10 @@ sdtp_sorwakeup(struct sdtp_inpcb *pcb)
 	if (!pcb->shutdown) {
 		NET_EPOCH_ENTER(et);
 
-		SOCK_LOCK(pcb->socket);
-		KASSERT(pcb->socket != NULL, ("pcb socket must be valid"));
-		sorwakeup(pcb->socket);
-		SOCK_UNLOCK(pcb->socket);
+		SOCK_LOCK(sdtp_so(pcb));
+		KASSERT(sdtp_so(pcb) != NULL, ("pcb socket must be valid"));
+		sorwakeup(sdtp_so(pcb));
+		SOCK_UNLOCK(sdtp_so(pcb));
 
 		NET_EPOCH_EXIT(et);
 	}

@@ -60,7 +60,6 @@ struct sdtp_pcbmap {
 
 struct sdtp_inpcb {
 	struct inpcb inp;
-	struct socket *socket;
 
 	struct mtx spinlock;
 	char *last_locker;
@@ -96,6 +95,7 @@ sdtp_so_pcb(struct socket *so)
 	return (struct sdtp_inpcb *)so->so_pcb;
 }
 
+#define sdtp_so(PCB)	((PCB)->inp.inp_socket)
 
 static inline void
 sdtp_pcb_lock(struct sdtp_inpcb *pcb)

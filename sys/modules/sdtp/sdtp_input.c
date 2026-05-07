@@ -67,7 +67,7 @@ sdtp_get_pcb(struct sdtp *sdtp_struct,
 	if (pcb) {
 		VALID_PCB_ASSERT(pcb);
 	}
-	return (pcb != NULL && pcb->socket != NULL) ? pcb : NULL;
+	return (pcb != NULL && sdtp_so(pcb) != NULL) ? pcb : NULL;
 }
 
 static void

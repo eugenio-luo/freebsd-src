@@ -220,7 +220,7 @@ sdtp_ctx_enable(struct sdtp_inpcb *pcb, struct sockopt *sopt, bool is_tx)
 
 	if ((is_tx && !ctx->tls_send) || (!is_tx && !ctx->tls_recv)) {
 		
-		error = ktls_create_session(pcb->socket, &sen.tls, &ktls, direction);
+		error = ktls_create_session(sdtp_so(pcb), &sen.tls, &ktls, direction);
 		if (error != 0) {
 			sdtp_pcb_debug(pcb, "failed to create session: %d", error);
 			goto sdtp_ctx_enable_free;

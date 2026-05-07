@@ -55,7 +55,7 @@ sdtp_send_control_buf(struct sdtp_inpcb *pcb, struct sdtp_peer *peer,
 	struct mbuf *m;
 	struct inpcb *inp = &pcb->inp;
 	struct epoch_tracker et;
-	int error, family = pcb->socket->so_proto->pr_domain->dom_family;
+	int error, family = sdtp_so(pcb)->so_proto->pr_domain->dom_family;
 	size_t iphlen = pcb->ip_header_length;
 
 	m = m_gethdr(M_NOWAIT, MT_DATA);
@@ -417,7 +417,7 @@ sdtp_send_data(struct sdtp_rpc *rpc, struct mbuf *buf, int priority)
 	struct sdtp_data_header *header;
 	// struct nhop_object *nh;
 	struct inpcb *inp = &rpc->sdtpcb->inp;
-	int family = rpc->sdtpcb->socket->so_proto->pr_domain->dom_family;
+	int family = sdtp_so(rpc->sdtpcb)->so_proto->pr_domain->dom_family;
 
 	// nh = rpc->peer->nh;
 	header = (struct sdtp_data_header *)(mtod(buf, char *) +
