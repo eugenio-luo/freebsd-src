@@ -110,7 +110,7 @@ sdtp_handoff_rpc(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc)
 	VALID_RPC_ASSERT(rpc);
 	RPC_LOCK_OWNED(rpc);
 	VALID_PCB_ASSERT(pcb);
-	mtx_assert(&pcb->spinlock, MA_OWNED);
+	PCB_LOCK_OWNED(pcb);
 
 	struct sdtp_interest *interest;
 
@@ -1091,10 +1091,9 @@ void
 sdtp_rpc_free(struct sdtp_rpc *rpc)
 {
 	VALID_RPC_ASSERT(rpc);
+	RPC_LOCK_OWNED(rpc);
 
 	int delta;
-
-	mtx_assert(rpc->spinlock_p, MA_OWNED);
 
 	if (rpc == NULL || rpc->state == SDTP_RPC_DEAD) {
 		return;

@@ -75,7 +75,7 @@ check_pcb_locks(struct sdtp_inpcb *pcb)
 {
 	KASSERT(pcb != NULL, ("pcb must be valid"));
 
-	mtx_assert(&pcb->spinlock, MA_NOTOWNED);
+	PCB_LOCK_NOTOWNED(pcb);
 	mtx_assert(&pcb->sdtp->port_map.write_spinlock, MA_NOTOWNED);
 	mtx_assert(&pcb->sdtp->peers.write_spinlock, MA_NOTOWNED);
 }
