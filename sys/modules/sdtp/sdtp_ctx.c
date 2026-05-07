@@ -85,6 +85,7 @@ static struct sdtp_ctx *
 sdtp_find_ctx(struct sdtp_inpcb *pcb, uint32_t peer_addr_be, uint16_t peer_port_be)
 {
 	VALID_PCB_ASSERT(pcb);
+	PCB_LOCK_OWNED(pcb);
 
 	struct sdtp_ctx_list *bucket;
 
@@ -96,6 +97,7 @@ static struct sdtp_ctx *
 sdtp_get_ctx(struct sdtp_inpcb *pcb, uint32_t peer_addr_be, uint16_t peer_port_be, int *error)
 {
 	VALID_PCB_ASSERT(pcb);
+	PCB_LOCK_OWNED(pcb);
 
 	struct sdtp_ctx_list *bucket;
 	struct sdtp_ctx *ctx;
@@ -184,6 +186,35 @@ sdtp_validate_tls_enable_out:
 	return error;
 }
 
+// TODO: improve these two functions!!!
+
+static int
+sdtp_new_ktls(struct sdtp_inpcb *pcb, struct sdtp_tls_enable *sen, struct ktls_session **ktls, int direction)
+{
+	int error = 0;
+
+	error = ktls_create_session(sdtp_so(pcb), &sen->tls, ktls, direction);
+	if (error != 0) {
+		sdtp_pcb_debug(pcb, "failed to create session: %d", error);
+		return (error);
+	}
+
+	error = ktls_ocf_try(*ktls, direction);
+	if (error != 0) {
+		sdtp_pcb_debug(pcb, "failed to ocf session: %d", error);
+		return (error);
+	}
+
+	error = ktls_try_ifnet(sdtp_so(pcb), *ktls, direction, false);
+	if (error) {
+		sdtp_pcb_debug(pcb, "failed ktls ifnet offload: %d", error);
+		ktls_use_sw(*ktls);
+		error = 0;
+	}
+
+	return (error);
+}
+
 int
 sdtp_ctx_enable(struct sdtp_inpcb *pcb, struct sockopt *sopt, bool is_tx)
 {
@@ -193,7 +224,8 @@ sdtp_ctx_enable(struct sdtp_inpcb *pcb, struct sockopt *sopt, bool is_tx)
 	int error = 0, direction = (is_tx) ? KTLS_TX : KTLS_RX;
 	struct sdtp_tls_enable sen;
 	struct sdtp_ctx *ctx;
-	struct ktls_session *ktls;
+	struct ktls_session *ktls = NULL;
+	struct ktls_session **slot = NULL;
 
 	if (!ktls_offload_enabled()) {
 		return (ENOTSUP);
@@ -212,40 +244,48 @@ sdtp_ctx_enable(struct sdtp_inpcb *pcb, struct sockopt *sopt, bool is_tx)
 		goto sdtp_ctx_enable_out;
 	}
 
+	sdtp_pcb_lock(pcb);
 	ctx = sdtp_get_ctx(pcb, sen.peer_addr_be, sen.peer_port_be, &error);
 	if (ctx == NULL || error != 0) {
 		sdtp_pcb_debug(pcb, "failed getting ctx: %d", error);
-		goto sdtp_ctx_enable_out;
+		goto sdtp_ctx_enable_locked;
 	}
 
-	if ((is_tx && !ctx->tls_send) || (!is_tx && !ctx->tls_recv)) {
-		
-		error = ktls_create_session(sdtp_so(pcb), &sen.tls, &ktls, direction);
+	slot = (is_tx) ? &ctx->tls_send : &ctx->tls_recv;
+	if (*slot == NULL) {
+		sdtp_pcb_unlock(pcb);
+		error = sdtp_new_ktls(pcb, &sen, &ktls, direction);
 		if (error != 0) {
-			sdtp_pcb_debug(pcb, "failed to create session: %d", error);
-			goto sdtp_ctx_enable_free;
+			sdtp_ctx_put(ctx);
+			goto sdtp_ctx_enable_out;
 		}
+		sdtp_pcb_lock(pcb);
 
-		error = ktls_ocf_try(ktls, direction);
-		if (error != 0) {
-			sdtp_pcb_debug(pcb, "failed to ocf session: %d", error);
-			ktls_free(ktls);
-			goto sdtp_ctx_enable_free;
+		if (*slot == NULL) {
+			*slot = ktls;
+			ktls = NULL;
+		} else {
+			sdtp_pcb_unlock(pcb);
+			sdtp_ctx_put(ctx);
+			goto sdtp_ctx_enable_out;
 		}
-
-		sdtp_pcb_debug(pcb, "ktls %s enabled", (is_tx) ? "tx" : "rx");
 	}
 
 	if ((sen.peer_addr_be == 0) && (sen.peer_port_be == 0)) {
 		pcb->ctx_map.reuse_ctx = ctx;
+		sdtp_ctx_hold(ctx);
 	}
 
-	goto sdtp_ctx_enable_out;
-
-sdtp_ctx_enable_free:
+	sdtp_pcb_debug(pcb, "ktls %s enabled", (is_tx) ? "tx" : "rx");
 	sdtp_ctx_put(ctx);
 
+sdtp_ctx_enable_locked:
+	sdtp_pcb_unlock(pcb);
+
 sdtp_ctx_enable_out:
+	if (ktls != NULL) {
+		ktls_free(ktls);
+	}
 	ktls_cleanup_tls_enable(&sen.tls);
 	return (error);
 }
