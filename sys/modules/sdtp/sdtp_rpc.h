@@ -167,27 +167,6 @@ sdtp_rpc_put(struct sdtp_rpc *rpc)
 	refcount_release(&rpc->refs);
 }
 
-static inline void
-insert_ready_rpc(struct sdtp_inpcb *pcb, struct sdtp_rpc_mlist *list,
-    struct sdtp_rpc *rpc)
-{
-	mtx_assert(&pcb->spinlock, MA_OWNED);
-	MPASS(atomic_load_int(&rpc->is_ready_atomic) == false);
-
-	atomic_store_int(&rpc->is_ready_atomic, true);
-	SDTP_LIST_INSERT_HEAD(list, rpc, ready_links);
-}
-
-static inline void
-remove_ready_rpc(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc)
-{
-	mtx_assert(&pcb->spinlock, MA_OWNED);
-	MPASS(atomic_load_int(&rpc->is_ready_atomic) == true);
-
-	SDTP_LIST_REMOVE(rpc, ready_links);
-	atomic_store_int(&rpc->is_ready_atomic, false);
-}
-
 struct sdtp_rpc *sdtp_new_client_rpc(struct sdtp_inpcb *pcb,
     struct in6_addr *dest, uint16_t port, int *error);
 struct sdtp_rpc *sdtp_find_client_rpc(struct sdtp_inpcb *pcb, uint64_t id);
@@ -201,6 +180,9 @@ void sdtp_rpc_unlock(struct sdtp_rpc *rpc);
 void sdtp_free_mbuf(struct mbuf *buf);
 void sdtp_rpc_free(struct sdtp_rpc *rpc);
 int sdtp_rpc_reap(struct sdtp_inpcb *pcb, bool reap_all);
+void insert_ready_rpc(struct sdtp_inpcb *pcb, struct sdtp_rpc_mlist *list,
+	struct sdtp_rpc *rpc);
+void remove_ready_rpc(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc);
 
 SDTP_DEFINE_EXPECTED_TYPE(rpc_ptr, struct sdtp_rpc *);
 

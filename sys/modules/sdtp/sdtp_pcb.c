@@ -19,8 +19,51 @@
 #include "sdtp_pcb.h"
 #include "sdtp_queue.h"
 #include "sdtp_structs.h"
+#include "sdtp_debug.h"
 
 extern struct sdtp_zones zones;
+
+void
+insert_response_interest(struct sdtp_inpcb *pcb, struct sdtp_interest *interest)
+{
+	PCB_LOCK_OWNED(pcb);
+	MPASS(atomic_load_int(&interest->is_response_atomic) == false);
+
+	atomic_store_int(&interest->is_response_atomic, true);
+	SDTP_QUEUE_INSERT_TAIL(&pcb->response_interests, interest,
+	    response_links);
+}
+
+void
+remove_response_interest(struct sdtp_inpcb *pcb, struct sdtp_interest *interest)
+{
+	PCB_LOCK_OWNED(pcb);
+	MPASS(atomic_load_int(&interest->is_response_atomic) == true);
+
+	SDTP_QUEUE_REMOVE(&pcb->response_interests, interest, response_links);
+	atomic_store_int(&interest->is_response_atomic, false);
+}
+
+void
+insert_request_interest(struct sdtp_inpcb *pcb, struct sdtp_interest *interest)
+{
+	PCB_LOCK_OWNED(pcb);
+	MPASS(atomic_load_int(&interest->is_request_atomic) == false);
+
+	atomic_store_int(&interest->is_request_atomic, true);
+	SDTP_QUEUE_INSERT_TAIL(&pcb->request_interests, interest,
+	    request_links);
+}
+
+void
+remove_request_interest(struct sdtp_inpcb *pcb, struct sdtp_interest *interest)
+{
+	PCB_LOCK_OWNED(pcb);
+	MPASS(atomic_load_int(&interest->is_request_atomic) == true);
+
+	SDTP_QUEUE_REMOVE(&pcb->request_interests, interest, request_links);
+	atomic_store_int(&interest->is_request_atomic, false);
+}
 
 void
 sdtp_sorwakeup(struct sdtp_inpcb *pcb)

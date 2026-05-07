@@ -96,47 +96,6 @@ sdtp_so_pcb(struct socket *so)
 	return (struct sdtp_inpcb *)so->so_pcb;
 }
 
-static inline void
-insert_response_interest(struct sdtp_inpcb *pcb, struct sdtp_interest *interest)
-{
-	mtx_assert(&pcb->spinlock, MA_OWNED);
-	MPASS(atomic_load_int(&interest->is_response_atomic) == false);
-
-	atomic_store_int(&interest->is_response_atomic, true);
-	SDTP_QUEUE_INSERT_TAIL(&pcb->response_interests, interest,
-	    response_links);
-}
-
-static inline void
-remove_response_interest(struct sdtp_inpcb *pcb, struct sdtp_interest *interest)
-{
-	mtx_assert(&pcb->spinlock, MA_OWNED);
-	MPASS(atomic_load_int(&interest->is_response_atomic) == true);
-
-	SDTP_QUEUE_REMOVE(&pcb->response_interests, interest, response_links);
-	atomic_store_int(&interest->is_response_atomic, false);
-}
-
-static inline void
-insert_request_interest(struct sdtp_inpcb *pcb, struct sdtp_interest *interest)
-{
-	mtx_assert(&pcb->spinlock, MA_OWNED);
-	MPASS(atomic_load_int(&interest->is_request_atomic) == false);
-
-	atomic_store_int(&interest->is_request_atomic, true);
-	SDTP_QUEUE_INSERT_TAIL(&pcb->request_interests, interest,
-	    request_links);
-}
-
-static inline void
-remove_request_interest(struct sdtp_inpcb *pcb, struct sdtp_interest *interest)
-{
-	mtx_assert(&pcb->spinlock, MA_OWNED);
-	MPASS(atomic_load_int(&interest->is_request_atomic) == true);
-
-	SDTP_QUEUE_REMOVE(&pcb->request_interests, interest, request_links);
-	atomic_store_int(&interest->is_request_atomic, false);
-}
 
 static inline void
 sdtp_pcb_lock(struct sdtp_inpcb *pcb)
@@ -150,6 +109,10 @@ sdtp_pcb_unlock(struct sdtp_inpcb *pcb)
 	mtx_unlock_spin(&pcb->spinlock);
 }
 
+void insert_response_interest(struct sdtp_inpcb *pcb, struct sdtp_interest *interest);
+void remove_response_interest(struct sdtp_inpcb *pcb, struct sdtp_interest *interest);
+void insert_request_interest(struct sdtp_inpcb *pcb, struct sdtp_interest *interest);
+void remove_request_interest(struct sdtp_inpcb *pcb, struct sdtp_interest *interest);
 void sdtp_sorwakeup(struct sdtp_inpcb *pcb);
 struct sdtp_inpcb *sdtp_find_inpcb(struct sdtp_pcbmap *pcbmap, uint16_t port);
 int sdtp_inpcb_bind(struct sdtp_pcbmap *pcbmap, uint16_t port,

@@ -45,6 +45,27 @@ sdtp_rpc_unlock(struct sdtp_rpc *rpc)
 }
 
 void
+insert_ready_rpc(struct sdtp_inpcb *pcb, struct sdtp_rpc_mlist *list,
+	struct sdtp_rpc *rpc)
+{
+	PCB_LOCK_OWNED(pcb);
+	MPASS(atomic_load_int(&rpc->is_ready_atomic) == false);
+
+	atomic_store_int(&rpc->is_ready_atomic, true);
+	SDTP_LIST_INSERT_HEAD(list, rpc, ready_links);
+}
+
+void
+remove_ready_rpc(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc)
+{
+	PCB_LOCK_OWNED(pcb);
+	MPASS(atomic_load_int(&rpc->is_ready_atomic) == true);
+
+	SDTP_LIST_REMOVE(rpc, ready_links);
+	atomic_store_int(&rpc->is_ready_atomic, false);
+}
+
+void
 sdtp_free_mbuf(struct mbuf *buf)
 {
 	KASSERT(buf != NULL, ("mbuf should be valid"));
