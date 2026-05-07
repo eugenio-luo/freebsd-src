@@ -89,12 +89,7 @@ struct sdtp_inpcb {
 	struct sdtp_ctx_map ctx_map;
 };
 
-static inline struct sdtp_inpcb *
-sdtp_so_pcb(struct socket *so)
-{
-	return (struct sdtp_inpcb *)so->so_pcb;
-}
-
+#define sdtp_so_pcb(SO)	((struct sdtp_inpcb *)((SO)->so_pcb))
 #define sdtp_so(PCB)	((PCB)->inp.inp_socket)
 
 static inline void
