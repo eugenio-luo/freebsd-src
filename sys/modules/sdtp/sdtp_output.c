@@ -73,6 +73,7 @@ sdtp_send_control_buf(struct sdtp_inpcb *pcb, struct sdtp_peer *peer,
 	case AF_INET: {
 		struct ip *ip_header = mtod(m, struct ip *);
 
+		INP_WLOCK(inp);
 		NET_EPOCH_ENTER(et);
 
 		memset(ip_header, 0, sizeof(struct ip));
@@ -90,6 +91,7 @@ sdtp_send_control_buf(struct sdtp_inpcb *pcb, struct sdtp_peer *peer,
 
 		error = ip_output(m, NULL, &inp->inp_route, 0, NULL, inp);
 		NET_EPOCH_EXIT(et);
+		INP_WUNLOCK(inp);
 		sdtp_pcb_debug(pcb, "ip_output return error: %d", error);
 
 		break;
@@ -432,6 +434,7 @@ sdtp_send_data(struct sdtp_rpc *rpc, struct mbuf *buf, int priority)
 	case AF_INET: {
 		struct ip *ip_header = mtod(buf, struct ip *);
 
+		INP_WLOCK(inp);
 		NET_EPOCH_ENTER(et);
 
 		memset(ip_header, 0, sizeof(struct ip));
@@ -451,6 +454,7 @@ sdtp_send_data(struct sdtp_rpc *rpc, struct mbuf *buf, int priority)
 
 		int res = ip_output(buf, NULL, &inp->inp_route, 0, NULL, inp);
 		NET_EPOCH_EXIT(et);
+		INP_WUNLOCK(inp);
 		sdtp_rpc_debug(rpc, "ip_output return error: %d", res);
 
 		break;
