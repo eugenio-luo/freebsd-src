@@ -49,8 +49,6 @@ sdtp_zone_init(void)
 	struct sdtp_packet_tailq_entry *entry;
 	int i;
 
-	SDTP_ZONE_INIT(zones.sdtp_zone_sock, "sdtp_sock",
-	    sizeof(struct sdtp_inpcb), maxsockets);
 	SDTP_ZONE_INIT(zones.sdtp_zone_rpc, "sdtp_rpc", sizeof(struct sdtp_rpc),
 	    MAX_SDTP_RPC);
 	SDTP_ZONE_INIT(zones.sdtp_zone_peer, "sdtp_peer",
@@ -382,7 +380,6 @@ sdtp_interest_init(struct sdtp_interest *interest)
 int
 sdtp_exit(struct sdtp *sdtp)
 {
-	SDTP_ZONE_DESTROY(zones.sdtp_zone_sock);
 	SDTP_ZONE_DESTROY(zones.sdtp_zone_rpc);
 	SDTP_ZONE_DESTROY(zones.sdtp_zone_peer);
 	SDTP_ZONE_DESTROY(zones.packet_tailq.sdtp_zone_entry);

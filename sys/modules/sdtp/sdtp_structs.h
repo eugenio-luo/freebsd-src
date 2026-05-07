@@ -169,7 +169,6 @@ struct sdtp {
 typedef struct uma_zone *sdtp_zone_t;
 
 struct sdtp_zones {
-	sdtp_zone_t sdtp_zone_sock;
 	sdtp_zone_t sdtp_zone_rpc;
 	sdtp_zone_t sdtp_zone_peer;
 
@@ -214,5 +213,8 @@ void sdtp_free_packet_tailq_entry(struct sdtp_packet_tailq_entry *entry);
 	do {                                                       \
 		atomic_add_64(&((PCB)->sdtp->metrics.FIELD), VAL); \
 	} while (0)
+
+VNET_DECLARE(struct inpcbinfo, sdtp_pcbinfo);
+#define V_sdtp_pcbinfo	VNET(sdtp_pcbinfo)
 
 #endif

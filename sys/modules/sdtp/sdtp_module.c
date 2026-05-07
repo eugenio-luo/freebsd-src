@@ -36,6 +36,19 @@ extern struct protosw sdtp6_protosw;
 
 static volatile bool existing = false;
 
+INPCBSTORAGE_DEFINE(sdtpcbstor, sdtp_inpcb,
+    "sdtp_inp", "sdtp_inpcb", "sdtp_hash");
+VNET_DEFINE(struct inpcbinfo, sdtp_pcbinfo);
+
+static void
+sdtp_vnet_init(void *arg __unused)
+{
+	in_pcbinfo_init(&V_sdtp_pcbinfo, &sdtpcbstor,
+		 SDTP_HASHSIZE, SDTP_HASHSIZE, SDTP_HASHSIZE);
+}
+VNET_SYSINIT(sdtp_vnet_init, SI_SUB_PROTO_DOMAIN, SI_ORDER_FOURTH,
+	sdtp_vnet_init, NULL);
+
 static int
 sdtp_module_load(void)
 {

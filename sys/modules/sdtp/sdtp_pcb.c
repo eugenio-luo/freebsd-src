@@ -147,17 +147,17 @@ sdtp_inpcb_bind_done:
 int
 sdtp_inpcb_alloc(struct socket *so, struct sdtp *sdtp)
 {
-	int i;
+	int i, error;
 	struct sdtp_inpcb *inp;
 	struct sdtp_pcbmap *pcbmap = &sdtp->port_map;
 
-	inp = SDTP_ZONE_GET(zones.sdtp_zone_sock, struct sdtp_inpcb);
-	if (inp == NULL) {
-		return ENOBUFS;
+	// TODO: replace pcbmap with map from inp
+	error = in_pcballoc(so, &V_sdtp_pcbinfo);
+	if (error) {
+		return (error);
 	}
-
-	inp->socket = so;
-	so->so_pcb = inp;
+	inp = __containerof(sotoinpcb(so), struct sdtp_inpcb, inp);
+	INP_WUNLOCK(&inp->inp);
 
 	atomic_store_32(&inp->protect_count_atomic, 0);
 	mtx_init(&inp->spinlock, "socket spinlock", NULL, MTX_SPIN);
