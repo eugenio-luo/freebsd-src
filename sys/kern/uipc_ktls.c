@@ -840,7 +840,7 @@ ktls_create_session(struct socket *so, struct tls_enable *en,
 	return (0);
 }
 
-static struct ktls_session *
+struct ktls_session *
 ktls_clone_session(struct ktls_session *tls, int direction)
 {
 	struct ktls_session *tls_new;
