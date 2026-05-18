@@ -25,18 +25,18 @@ struct sdtp_tls_enable {
 	struct tls_enable tls;
 };
 
-struct sdtp_ctx {
-	uint8_t tx_conf:3;
-	uint8_t rx_conf:3;
+struct sdtp_tls_state {
+	struct tls_enable    en;
+	struct ktls_session *session;
+	bool                 active;
+};
 
-	struct ktls_session *tls_send;
-	struct ktls_session *tls_recv;
+struct sdtp_ctx {
+	struct sdtp_tls_state tx;
+	struct sdtp_tls_state rx;
 
 	uint32_t addr_be;
 	uint16_t port_be;
-
-	void *offload_tx;
-	void *offload_rx;
 
 	sdtp_ref_t refs;
 
