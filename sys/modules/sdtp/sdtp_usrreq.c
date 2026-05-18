@@ -409,8 +409,8 @@ sdtp_wait_for_message(struct sdtp_inpcb *pcb, int flags, uint64_t id,
 			}
 
 			if (rpc->error == 0 && rpc->msgin.num_bufs > 0) {
-				if (rpc->ctx) {
-					(void)rpc->ctx;
+				if (rpc->crypto.ctx) {
+					(void)rpc->crypto.ctx;
 					// TODO: homals_copy_to_user
 				} else {
 					sdtp_pcb_debug(pcb, "copy to user");

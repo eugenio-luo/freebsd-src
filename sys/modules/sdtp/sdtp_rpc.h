@@ -17,6 +17,7 @@
 #include "sdtp_pcb.h"
 #include "sdtp_queue.h"
 #include "sdtp_utils.h"
+#include "sdtp_ctx.h"
 
 struct sdtp_peer;
 
@@ -148,9 +149,7 @@ struct sdtp_rpc {
 
 	uint64_t start_cycles;
 
-	void *ctx;
-	void *rpc_offload_ctx_tx;
-	void *rpc_offload_ctx_rx;
+	struct sdtp_rpc_crypto crypto;
 };
 
 static inline void

@@ -335,6 +335,7 @@ sdtp_init_server_rpc_fields(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc,
 	rpc->magic = SDTP_RPC_MAGIC;
 	rpc->start_cycles = get_cyclecount();
 	refcount_init(&rpc->refs, 1);
+	memset(&rpc->crypto, 0, sizeof(rpc->crypto));
 }
 
 static void
@@ -395,7 +396,7 @@ sdtp_new_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source,
 
 	sdtp_lock_rpc_and_insert_pcb_list(pcb, rpc, id);
 
-	if (!rpc->ctx) {
+	if (rpc->crypto.ctx == NULL) {
 		if (ntohl(header->data_segment.offset_be) == 0) {
 			atomic_set_32(&rpc->flags_atomic, RPC_PKTS_READY);
 			sdtp_handoff_rpc(pcb, rpc);
@@ -595,12 +596,12 @@ sdtp_data_packet(struct sdtp *sdtp, struct mbuf *m, struct sdtp_rpc *rpc,
 		sdtp_message_in_init(&rpc->msgin,
 		    ntohl(header->message_length_be),
 		    ntohl(header->incoming_be));
-		if (rpc->ctx) {
+		if (rpc->crypto.ctx != NULL) {
 			/* TODO: Set sdtp_max_pkt_data for first data packet */
 		}
 	}
 
-	if (rpc->ctx) {
+	if (rpc->crypto.ctx != NULL) {
 		// TODO: sdtp_add_packet() and handoff()
 		goto sdtp_data_packet_error;
 	} else {

@@ -43,6 +43,13 @@ struct sdtp_ctx {
 	LIST_ENTRY(sdtp_ctx) hash_links;
 };
 
+struct sdtp_rpc_crypto {
+	struct sdtp_ctx *ctx;
+
+	unsigned int max;
+	int offset;
+};
+
 struct sdtp_ctx_map {
 	struct sdtp_ctx_list buckets[SDTP_SERVER_RPC_BUCKETS];
 	struct sdtp_ctx *reuse_ctx;
