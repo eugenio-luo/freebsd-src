@@ -27,7 +27,15 @@ struct sdtp_tls_enable {
 
 struct sdtp_tls_state {
 	struct tls_enable    en;
+
+	/*
+	 * session can be NULL even if state is active,
+	 * when the state is cloned, the session won't be
+	 * cloned, and it should be lazily initialized when
+	 * the user tries to recv or send.
+	 */
 	struct ktls_session *session;
+
 	bool                 active;
 };
 

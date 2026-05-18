@@ -117,12 +117,28 @@ sdtp_get_ctx(struct sdtp_inpcb *pcb, uint32_t peer_addr_be, uint16_t peer_port_b
 	return ctx;
 }
 
+static void
+sdtp_free_tls_state(struct sdtp_tls_state *state)
+{
+	if (state->active) {
+		ktls_cleanup_tls_enable(&state->en);
+		state->active = false;
+
+		if (state->session != NULL) {
+			ktls_free(state->session);
+			state->session = NULL;
+		}
+	}
+}
+
 void
 sdtp_free_ctx(struct sdtp_ctx *ctx)
 {
 	KASSERT(ctx != NULL, ("%s: ctx must be valid", __func__));
 
 	LIST_REMOVE(ctx, hash_links);
+	sdtp_free_tls_state(&ctx->tx);
+	sdtp_free_tls_state(&ctx->rx);
 	explicit_bzero(ctx, sizeof(*ctx));
 	sdtp_pool_free_ctx(ctx);
 }
@@ -215,17 +231,33 @@ sdtp_new_ktls(struct sdtp_inpcb *pcb, struct sdtp_tls_enable *sen, struct ktls_s
 	return (error);
 }
 
+static void
+sdtp_assign_reuse_ctx(struct sdtp_inpcb *pcb, struct sdtp_ctx *ctx)
+{
+	if (pcb->ctx_map.reuse_ctx == ctx) {
+		return;
+	}
+
+	if (pcb->ctx_map.reuse_ctx != NULL) {
+		sdtp_ctx_put(pcb->ctx_map.reuse_ctx);
+	}
+
+	pcb->ctx_map.reuse_ctx = ctx;
+	sdtp_ctx_hold(ctx);
+}
+
 int
 sdtp_ctx_enable(struct sdtp_inpcb *pcb, struct sockopt *sopt, bool is_tx)
 {
 	VALID_PCB_ASSERT(pcb);
 	PCB_LOCK_NOTOWNED(pcb);
 
+	bool moved_en = false;
 	int error = 0, direction = (is_tx) ? KTLS_TX : KTLS_RX;
 	struct sdtp_tls_enable sen;
-	struct sdtp_ctx *ctx;
+	struct sdtp_ctx *ctx = NULL;
 	struct ktls_session *ktls = NULL;
-	struct ktls_session **slot = NULL;
+	struct sdtp_tls_state *slot = NULL;
 
 	if (!ktls_offload_enabled()) {
 		return (ENOTSUP);
@@ -246,34 +278,40 @@ sdtp_ctx_enable(struct sdtp_inpcb *pcb, struct sockopt *sopt, bool is_tx)
 
 	sdtp_pcb_lock(pcb);
 	ctx = sdtp_get_ctx(pcb, sen.peer_addr_be, sen.peer_port_be, &error);
-	if (ctx == NULL || error != 0) {
+	if (ctx == NULL) {
 		sdtp_pcb_debug(pcb, "failed getting ctx: %d", error);
 		goto sdtp_ctx_enable_locked;
 	}
 
-	slot = (is_tx) ? &ctx->tls_send : &ctx->tls_recv;
-	if (*slot == NULL) {
+	slot = (is_tx) ? &ctx->tx : &ctx->rx;
+	if (!slot->active) {
 		sdtp_pcb_unlock(pcb);
 		error = sdtp_new_ktls(pcb, &sen, &ktls, direction);
-		if (error != 0) {
-			sdtp_ctx_put(ctx);
-			goto sdtp_ctx_enable_out;
-		}
 		sdtp_pcb_lock(pcb);
 
-		if (*slot == NULL) {
-			*slot = ktls;
-			ktls = NULL;
-		} else {
-			sdtp_pcb_unlock(pcb);
+		if (error != 0) {
 			sdtp_ctx_put(ctx);
-			goto sdtp_ctx_enable_out;
+			goto sdtp_ctx_enable_locked;
 		}
+
+		// we dropped the lock so we need to check again
+		slot = (is_tx) ? &ctx->tx : &ctx->rx;
+		if (slot->active) {
+			error = EALREADY;
+			sdtp_ctx_put(ctx);
+			goto sdtp_ctx_enable_locked;
+		}
+
+		slot->en = sen.tls;
+		moved_en = true;
+		slot->session = ktls;
+		ktls = NULL;
+		slot->active = true;
+
 	}
 
 	if ((sen.peer_addr_be == 0) && (sen.peer_port_be == 0)) {
-		pcb->ctx_map.reuse_ctx = ctx;
-		sdtp_ctx_hold(ctx);
+		sdtp_assign_reuse_ctx(pcb, ctx);
 	}
 
 	sdtp_pcb_debug(pcb, "ktls %s enabled", (is_tx) ? "tx" : "rx");
@@ -286,6 +324,8 @@ sdtp_ctx_enable_out:
 	if (ktls != NULL) {
 		ktls_free(ktls);
 	}
-	ktls_cleanup_tls_enable(&sen.tls);
+	if (!moved_en) {
+		ktls_cleanup_tls_enable(&sen.tls);
+	}
 	return (error);
 }
