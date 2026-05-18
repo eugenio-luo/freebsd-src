@@ -391,8 +391,9 @@ sdtp_new_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source,
 		goto sdtp_new_server_rpc_error;
 	}
 
-	// TODO: HomaLS context initialization
-	// rpc->ctx = set_rpc_context();
+	if (pcb->ctx_map.active) {
+		sdtp_rpc_ctx_init(pcb, rpc);
+	}
 
 	sdtp_lock_rpc_and_insert_pcb_list(pcb, rpc, id);
 

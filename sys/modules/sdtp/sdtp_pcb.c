@@ -186,6 +186,7 @@ sdtp_inpcb_alloc(struct socket *so, struct sdtp *sdtp)
 	SDTP_QUEUE_INIT(&inp->request_interests);
 	SDTP_QUEUE_INIT(&inp->response_interests);
 	inp->ctx_map.reuse_ctx = NULL;
+	inp->ctx_map.active = false;
 
 	mtx_lock_spin(&pcbmap->write_spinlock);
 
