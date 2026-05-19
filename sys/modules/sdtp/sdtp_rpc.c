@@ -436,6 +436,11 @@ sdtp_new_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, struct mbuf
 			atomic_set_32(&rpc->flags_atomic, RPC_PKTS_READY);
 			sdtp_handoff_rpc(pcb, rpc);
 		}
+	} else {
+		if (sdtp_payload_len(m) >= rpc->msgin.total_length) {
+			atomic_set_32(&rpc->flags_atomic, RPC_PKTS_READY);
+			sdtp_handoff_rpc(pcb, rpc);
+		}
 	}
 
 	sdtp_pcb_unlock(pcb);
