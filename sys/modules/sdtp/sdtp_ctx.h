@@ -18,7 +18,7 @@
 struct sdtp_inpcb;
 struct sdtp_rpc;
 
-struct sdtp_tls_enable {
+struct sdtp_tls_args {
 	uint32_t          peer_addr_be;
 	uint16_t          peer_port_be;
 	uint32_t          local_addr_be;

@@ -153,7 +153,7 @@ sdtp_rpc_ctx_init(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc)
 }
 
 static int
-sdtp_ktls_copyin_tls_enable(struct sockopt *sopt, struct sdtp_tls_enable *sen)
+sdtp_ktls_copyin_tls_enable(struct sockopt *sopt, struct sdtp_tls_args *sen)
 {
 	int error;
 
@@ -166,7 +166,7 @@ sdtp_ktls_copyin_tls_enable(struct sockopt *sopt, struct sdtp_tls_enable *sen)
 }
 
 static int
-sdtp_validate_tls_enable(struct sdtp_inpcb *pcb, struct sdtp_tls_enable *sen)
+sdtp_validate_tls_enable(struct sdtp_inpcb *pcb, struct sdtp_tls_args *sen)
 {
 	int error = 0;
 
@@ -205,7 +205,7 @@ sdtp_validate_tls_enable_out:
 // TODO: improve these two functions!!!
 
 static int
-sdtp_new_ktls(struct sdtp_inpcb *pcb, struct sdtp_tls_enable *sen, struct ktls_session **ktls, int direction)
+sdtp_new_ktls(struct sdtp_inpcb *pcb, struct sdtp_tls_args *sen, struct ktls_session **ktls, int direction)
 {
 	int error = 0;
 
@@ -254,7 +254,7 @@ sdtp_ctx_enable(struct sdtp_inpcb *pcb, struct sockopt *sopt, bool is_tx)
 
 	bool moved_en = false;
 	int error = 0, direction = (is_tx) ? KTLS_TX : KTLS_RX;
-	struct sdtp_tls_enable sen;
+	struct sdtp_tls_args sen;
 	struct sdtp_ctx *ctx = NULL;
 	struct ktls_session *ktls = NULL;
 	struct sdtp_tls_state *slot = NULL;
@@ -272,7 +272,7 @@ sdtp_ctx_enable(struct sdtp_inpcb *pcb, struct sockopt *sopt, bool is_tx)
 
 	error = sdtp_validate_tls_enable(pcb, &sen);
 	if (error != 0) {
-		sdtp_pcb_debug(pcb, "sdtp_tls_enable validation failed: %d", error);
+		sdtp_pcb_debug(pcb, "sdtp_tls_args validation failed: %d", error);
 		goto sdtp_ctx_enable_out;
 	}
 
