@@ -15,6 +15,13 @@
 #include <sys/ktls.h>
 #include <sys/uio.h>
 
+#include <net/if.h>
+#include <net/if_var.h>
+#include <net/if_private.h>
+#include <net/if_types.h>
+#include <net/route/nhop.h>
+#include <netinet/in.h>
+
 #include <opencrypto/cryptodev.h>
 #include <opencrypto/ktls.h>
 
@@ -146,11 +153,79 @@ sdtp_free_ctx(struct sdtp_ctx *ctx)
 	sdtp_pool_free_ctx(ctx);
 }
 
+/*
+ * This is a shallow clone, ktls_session won't be cloned,
+ * instead it will be lazily created when it will be used.
+ */
+static struct sdtp_ctx *
+sdtp_clone_reuse_ctx(struct sdtp_inpcb *pcb, uint32_t addr_be, uint16_t port_be, int *error)
+{
+	VALID_PCB_ASSERT(pcb);
+	PCB_LOCK_OWNED(pcb);
+
+	struct sdtp_ctx *reuse_ctx, *ctx;
+
+	reuse_ctx = pcb->ctx_map.reuse_ctx;
+	if (reuse_ctx == NULL) {
+		return (NULL);
+	}
+
+	ctx = sdtp_get_ctx(pcb, addr_be, port_be, error);
+	if (ctx == NULL) {
+		return (NULL);
+	}
+
+	ctx->tx = reuse_ctx->tx;
+	ctx->rx = reuse_ctx->rx;
+	ctx->addr_be = reuse_ctx->addr_be;
+	ctx->port_be = reuse_ctx->port_be;
+
+	if (ctx->tx.active) {
+		ctx->tx.copy = true;
+		ctx->tx.session = NULL;
+	}
+	if (ctx->rx.active) {
+		ctx->rx.copy = true;
+		ctx->rx.session = NULL;
+	}
+
+	return (ctx);
+}
+
 int
 sdtp_rpc_ctx_init(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc)
 {
 	VALID_PCB_ASSERT(pcb);
 	VALID_RPC_ASSERT(rpc);
+	PCB_LOCK_OWNED(pcb);
+	KASSERT(pcb->ctx_map.active == true, ("pcb must have ctx map"));
+
+	struct sdtp_ctx *ctx;
+	int error = 0;
+	uint32_t addr_be;
+	uint16_t port_be, mtu;
+
+	ipv6_to_ipv4(&rpc->peer->addr, (struct in_addr *) &addr_be);
+	port_be = htons(rpc->dport);
+
+	ctx = sdtp_find_ctx(pcb, addr_be, port_be);
+	if (ctx == NULL) {
+	        ctx = sdtp_clone_reuse_ctx(pcb, addr_be, port_be, &error);
+	        if (ctx == NULL) {
+	                return (error);
+	        }
+	}
+
+	KASSERT(NH_IS_VALID(rpc->peer->nh), ("nh must be valid"));
+	mtu = rpc->peer->nh->nh_mtu;
+
+	sdtp_ctx_put(ctx);
+	rpc->crypto.ctx = ctx;
+	rpc->crypto.offset = 0;
+	rpc->crypto.max = mtu -
+	    IP_SDTP_HEADER_SIZE(rpc->sdtpcb, struct sdtp_data_header);
+
+	sdtp_rpc_debug(rpc, "successful ctx init");
 
 	return (0);
 }
