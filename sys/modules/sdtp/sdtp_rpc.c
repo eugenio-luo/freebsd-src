@@ -305,6 +305,30 @@ sdtp_set_header_offset(struct sdtp_data_header *header)
 }
 
 static void
+sdtp_message_in_init(struct sdtp_message_in *msgin, int length, int incoming)
+{
+	KASSERT(msgin->total_length == -1, ("msgin must not be initialized: length: %d",
+		msgin->total_length));
+
+	msgin->total_length = length;
+	TAILQ_INIT(&msgin->packets);
+	msgin->num_bufs = 0;
+	msgin->bytes_remaining = length;
+	msgin->gsoseg_offset = 0;
+	msgin->decrypt_offset = 0;
+	msgin->gsoseg_bufs = &msgin->packets;
+	msgin->decrypt_bufs = &msgin->packets;
+	msgin->max_pkt_data = 0;
+	msgin->nextgsoseg_length = 0;
+	msgin->nextgsoseg_received = 0;
+	msgin->incoming = (incoming > length) ? length : incoming;
+	msgin->priority = 0;
+	msgin->scheduled = length > incoming;
+	msgin->copied_out = 0;
+	msgin->num_bpages = 0;
+}
+
+static void
 sdtp_init_server_rpc_fields(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc,
     struct sdtp_data_header *header, uint64_t id)
 {
@@ -377,6 +401,10 @@ sdtp_new_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source,
 
 	sdtp_set_header_offset(header);
 	sdtp_init_server_rpc_fields(pcb, rpc, header, id);
+	sdtp_message_in_init(&rpc->msgin,
+		    ntohl(header->message_length_be),
+		    ntohl(header->incoming_be));
+
 	rpc->peer = sdtp_find_peer(&pcb->sdtp->peers, source, &pcb->inp,
 	    &error);
 	if (error != 0) {
@@ -415,27 +443,6 @@ sdtp_new_server_rpc_error:
 		sdtp_rpc_zone_free(pcb, rpc);
 	}
 	return SDTP_MAKE_UNEXPECTED(struct sdtp_expected_rpc_ptr, error);
-}
-
-static void
-sdtp_message_in_init(struct sdtp_message_in *msgin, int length, int incoming)
-{
-	msgin->total_length = length;
-	TAILQ_INIT(&msgin->packets);
-	msgin->num_bufs = 0;
-	msgin->bytes_remaining = length;
-	msgin->gsoseg_offset = 0;
-	msgin->decrypt_offset = 0;
-	msgin->gsoseg_bufs = &msgin->packets;
-	msgin->decrypt_bufs = &msgin->packets;
-	msgin->max_pkt_data = 0;
-	msgin->nextgsoseg_length = 0;
-	msgin->nextgsoseg_received = 0;
-	msgin->incoming = (incoming > length) ? length : incoming;
-	msgin->priority = 0;
-	msgin->scheduled = length > incoming;
-	msgin->copied_out = 0;
-	msgin->num_bpages = 0;
 }
 
 static bool
@@ -547,7 +554,7 @@ sdtp_ack_client(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc,
 
 /* return false if the RPC isn't in the correct state */
 static bool
-sdtp_prepare_rpc_for_data(struct sdtp_rpc *rpc)
+sdtp_prepare_rpc_for_data(struct sdtp_rpc *rpc, struct sdtp_data_header *header)
 {
 	bool is_client = sdtp_is_client(rpc->id);
 
@@ -559,12 +566,21 @@ sdtp_prepare_rpc_for_data(struct sdtp_rpc *rpc)
 		return false;
 	}
 
+	// if server RPC, msgin should be already initialized
+	// in sdtp_new_server_rpc().
 	if (is_client) {
 		if (rpc->state != SDTP_RPC_OUTGOING) {
 			return false;
 		}
 
 		rpc->state = SDTP_RPC_INCOMING;
+		sdtp_message_in_init(&rpc->msgin,
+		    ntohl(header->message_length_be),
+		    ntohl(header->incoming_be));
+
+		if (rpc->crypto.ctx != NULL) {
+			/* TODO: Set sdtp_max_pkt_data for first data packet */
+		}
 	}
 
 	return true;
@@ -589,17 +605,8 @@ sdtp_data_packet(struct sdtp *sdtp, struct mbuf *m, struct sdtp_rpc *rpc,
 		goto sdtp_data_packet_error;
 	}
 
-	if (!sdtp_prepare_rpc_for_data(rpc)) {
+	if (!sdtp_prepare_rpc_for_data(rpc, header)) {
 		goto sdtp_data_packet_error;
-	}
-
-	if (rpc->msgin.total_length < 0) {
-		sdtp_message_in_init(&rpc->msgin,
-		    ntohl(header->message_length_be),
-		    ntohl(header->incoming_be));
-		if (rpc->crypto.ctx != NULL) {
-			/* TODO: Set sdtp_max_pkt_data for first data packet */
-		}
 	}
 
 	if (rpc->crypto.ctx != NULL) {
