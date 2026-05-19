@@ -26,6 +26,11 @@ struct sdtp_tls_args {
 };
 
 struct sdtp_tls_state {
+	/*
+	 * en is only useful in the context of reusing
+	 * ctx, where the new copy will reuse the same
+	 * parameters to create a new session.
+	 */
 	struct tls_enable    en;
 
 	/*
@@ -37,6 +42,11 @@ struct sdtp_tls_state {
 	struct ktls_session *session;
 
 	bool                 active;
+
+	/*
+	 * If this flag is on, then this state is a copy.
+	 */
+	bool                 copy;
 };
 
 struct sdtp_ctx {

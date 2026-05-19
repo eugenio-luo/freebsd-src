@@ -121,13 +121,16 @@ static void
 sdtp_free_tls_state(struct sdtp_tls_state *state)
 {
 	if (state->active) {
-		ktls_cleanup_tls_enable(&state->en);
-		state->active = false;
+		if (!state->copy) {
+			ktls_cleanup_tls_enable(&state->en);
+		}
 
 		if (state->session != NULL) {
 			ktls_free(state->session);
 			state->session = NULL;
 		}
+
+		state->active = false;
 	}
 }
 
@@ -238,8 +241,13 @@ sdtp_assign_reuse_ctx(struct sdtp_inpcb *pcb, struct sdtp_ctx *ctx)
 		return;
 	}
 
+	/*
+	 * Making it possible to change reuse ctx means
+	 * that we'll have a lot of invalid refs.
+	 */
 	if (pcb->ctx_map.reuse_ctx != NULL) {
-		sdtp_ctx_put(pcb->ctx_map.reuse_ctx);
+		KASSERT(0, ("changing reuse_ctx not implemented yet"));
+		// sdtp_ctx_put(pcb->ctx_map.reuse_ctx);
 	}
 
 	pcb->ctx_map.reuse_ctx = ctx;
@@ -307,7 +315,7 @@ sdtp_ctx_enable(struct sdtp_inpcb *pcb, struct sockopt *sopt, bool is_tx)
 		slot->session = ktls;
 		ktls = NULL;
 		slot->active = true;
-
+		slot->copy = false;
 	}
 
 	if ((sen.peer_addr_be == 0) && (sen.peer_port_be == 0)) {
