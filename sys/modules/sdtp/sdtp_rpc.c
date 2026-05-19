@@ -451,7 +451,7 @@ sdtp_add_packet(struct mbuf *m, struct sdtp_rpc *rpc,
 
 	struct sdtp_packet_tailq_entry *packet, *new;
 	int offset = ntohl(header->data_segment.offset_be);
-	int data_bytes = m->m_pkthdr.len - sizeof(struct sdtp_data_header);
+	int data_bytes = sdtp_payload_len(m);
 	int floor = rpc->msgin.copied_out;
 	int ceiling = rpc->msgin.total_length;
 

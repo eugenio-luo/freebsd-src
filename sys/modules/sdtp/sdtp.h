@@ -13,6 +13,7 @@
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/stdint.h>
+#include <sys/mbuf.h>
 
 #include "sdtp_common.h"
 
@@ -145,5 +146,19 @@ CTASSERT(sizeof(struct sdtp_cutoffs_header) <= SDTP_MAX_HEADER);
 #define IP_SDTP_HEADER_SIZE(PCB, TYPE) ((PCB)->ip_header_length + sizeof(TYPE))
 
 extern int sdtp_header_lengths[];
+
+static inline int
+sdtp_payload_len(struct mbuf *m)
+{
+	KASSERT(m->m_len >= sizeof(struct sdtp_data_header),
+	 ("%s: header must be at least %lu, instead %d", __func__,
+	 sizeof(struct sdtp_data_header), m->m_len));
+	KASSERT(m->m_flags & M_PKTHDR, ("mbuf must be a header mbuf"));
+
+	struct sdtp_common_header *header = mtod(m, struct sdtp_common_header *);
+	KASSERT(header->type == SDTP_DATA, ("mbuf must be DATA type"));
+
+	return m->m_pkthdr.len - sizeof(struct sdtp_data_header);
+}
 
 #endif
