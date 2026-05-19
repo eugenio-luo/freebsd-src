@@ -620,15 +620,16 @@ sdtp_data_packet(struct sdtp *sdtp, struct mbuf *m, struct sdtp_rpc *rpc,
 		goto sdtp_data_packet_error;
 	}
 
-	if (rpc->crypto.ctx != NULL) {
-		// TODO: sdtp_add_packet() and handoff()
+	if (!sdtp_add_packet(m, rpc, header)) {
 		goto sdtp_data_packet_error;
-	} else {
-		if (!sdtp_add_packet(m, rpc, header)) {
-			goto sdtp_data_packet_error;
-		}
+	}
 
-		if (!(atomic_load_32(&rpc->flags_atomic) & RPC_PKTS_READY)) {
+	if (!TAILQ_EMPTY(&rpc->msgin.packets) &&
+		(!(atomic_load_32(&rpc->flags_atomic) & RPC_PKTS_READY))) {
+
+		if (!is_encrypted_rpc(rpc)
+		//  || sdtp_record_complete(rpc)) {
+		) {
 			atomic_set_32(&rpc->flags_atomic, RPC_PKTS_READY);
 			sdtp_pcb_lock(pcb);
 			sdtp_handoff_rpc(pcb, rpc);
