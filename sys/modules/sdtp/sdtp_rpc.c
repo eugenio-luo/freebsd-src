@@ -377,14 +377,20 @@ sdtp_lock_rpc_and_insert_pcb_list(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc,
 }
 
 static struct sdtp_expected_rpc_ptr
-sdtp_new_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source,
-    struct sdtp_data_header *header)
+sdtp_new_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, struct mbuf *m)
 {
-	int error = 0;
-	uint64_t id = sdtp_local_id(header->common.sender_id_be);
-	struct sdtp_rpc *rpc = sdtp_find_server_rpc(pcb, source,
-	    ntohs(header->common.sport_be), id);
+	VALID_PCB_ASSERT(pcb);
+	MBUF_LEN_ASSERT(m, struct sdtp_data_header);
 
+	struct sdtp_rpc *rpc;
+	struct sdtp_data_header *header;
+	int error = 0;
+	uint64_t id;
+
+	header = mtod(m, struct sdtp_data_header *);
+	id = sdtp_local_id(header->common.sender_id_be);
+
+	rpc = sdtp_find_server_rpc(pcb, source, ntohs(header->common.sport_be), id);
 	if (rpc) {
 		sdtp_pcb_debug(pcb, "no need for new rpc, found old one");
 		return SDTP_MAKE_EXPECTED(struct sdtp_expected_rpc_ptr, rpc);
@@ -791,8 +797,7 @@ sdtp_get_rpc(struct mbuf *m, struct sdtp_inpcb *pcb,
 
 	if (!is_client && header->type == SDTP_DATA) {
 		/* We are the RPC server and it's a DATA packet */
-		expected_rpc = sdtp_new_server_rpc(pcb, source,
-		    mtod(m, struct sdtp_data_header *));
+		expected_rpc = sdtp_new_server_rpc(pcb, source, m);
 		if (!SDTP_IS_ERROR(expected_rpc) &&
 		    SDTP_GET_VAL(expected_rpc) != NULL) {
 			VALID_RPC_ASSERT(SDTP_GET_VAL(expected_rpc));
