@@ -166,6 +166,12 @@ sdtp_rpc_put(struct sdtp_rpc *rpc)
 	refcount_release(&rpc->refs);
 }
 
+static inline bool
+is_encrypted_rpc(struct sdtp_rpc *rpc)
+{
+	return rpc->crypto.ctx != NULL;
+}
+
 struct sdtp_rpc *sdtp_new_client_rpc(struct sdtp_inpcb *pcb,
     struct in6_addr *dest, uint16_t port, int *error);
 struct sdtp_rpc *sdtp_find_client_rpc(struct sdtp_inpcb *pcb, uint64_t id);

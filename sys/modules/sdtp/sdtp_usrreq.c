@@ -409,7 +409,7 @@ sdtp_wait_for_message(struct sdtp_inpcb *pcb, int flags, uint64_t id,
 			}
 
 			if (rpc->error == 0 && rpc->msgin.num_bufs > 0) {
-				if (rpc->crypto.ctx) {
+				if (is_encrypted_rpc(rpc)) {
 					(void)rpc->crypto.ctx;
 					// TODO: homals_copy_to_user
 				} else {

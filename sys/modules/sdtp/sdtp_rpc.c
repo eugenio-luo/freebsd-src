@@ -431,13 +431,13 @@ sdtp_new_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, struct mbuf
 
 	sdtp_lock_rpc_and_insert_pcb_list(pcb, rpc, id);
 
-	if (rpc->crypto.ctx == NULL) {
-		if (ntohl(header->data_segment.offset_be) == 0) {
+	if (is_encrypted_rpc(rpc)) {
+		if (sdtp_payload_len(m) >= rpc->msgin.total_length) {
 			atomic_set_32(&rpc->flags_atomic, RPC_PKTS_READY);
 			sdtp_handoff_rpc(pcb, rpc);
 		}
 	} else {
-		if (sdtp_payload_len(m) >= rpc->msgin.total_length) {
+		if (ntohl(header->data_segment.offset_be) == 0) {
 			atomic_set_32(&rpc->flags_atomic, RPC_PKTS_READY);
 			sdtp_handoff_rpc(pcb, rpc);
 		}
@@ -589,7 +589,7 @@ sdtp_prepare_rpc_for_data(struct sdtp_rpc *rpc, struct sdtp_data_header *header)
 		    ntohl(header->message_length_be),
 		    ntohl(header->incoming_be));
 
-		if (rpc->crypto.ctx != NULL) {
+		if (is_encrypted_rpc(rpc)) {
 			/* TODO: Set sdtp_max_pkt_data for first data packet */
 		}
 	}
