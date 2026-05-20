@@ -161,4 +161,7 @@ sdtp_payload_len(struct mbuf *m)
 	return m->m_pkthdr.len - sizeof(struct sdtp_data_header);
 }
 
+#define SDTP_MTOD(MBUF, T, OFFSET) \
+	((T)(mtod((MBUF), char *) + OFFSET))
+
 #endif

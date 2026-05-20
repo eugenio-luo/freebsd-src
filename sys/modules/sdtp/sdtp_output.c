@@ -132,12 +132,10 @@ sdtp_send_control(struct sdtp_rpc *rpc, enum sdtp_pkt_type type, void *data,
 }
 
 void
-sdtp_send_unknown(struct sdtp_inpcb *pcb, struct mbuf *m,
+sdtp_send_unknown(struct sdtp_inpcb *pcb, struct sdtp_common_header *header,
     struct in6_addr *source)
 {
 	struct sdtp_peer *peer;
-	struct sdtp_common_header *header = mtod(m,
-	    struct sdtp_common_header *);
 	struct sdtp_unknown_header unknown;
 	int error = 0;
 

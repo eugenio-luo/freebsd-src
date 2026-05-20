@@ -14,7 +14,7 @@
 #include "sdtp_rpc.h"
 
 void sdtp_resend_data(struct sdtp_rpc *rpc, int start, int end, int priority);
-void sdtp_send_unknown(struct sdtp_inpcb *pcb, struct mbuf *m,
+void sdtp_send_unknown(struct sdtp_inpcb *pcb, struct sdtp_common_header *header,
     struct in6_addr *source);
 int sdtp_send_control(struct sdtp_rpc *rpc, enum sdtp_pkt_type type, void *data,
     size_t len);

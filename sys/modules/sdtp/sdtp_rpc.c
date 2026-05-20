@@ -377,17 +377,16 @@ sdtp_lock_rpc_and_insert_pcb_list(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc,
 }
 
 static struct sdtp_expected_rpc_ptr
-sdtp_new_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, struct mbuf *m)
+sdtp_new_server_rpc(struct sdtp_data_header *header,
+		    struct sdtp_inpcb *pcb, struct in6_addr *source, int payload_size)
 {
 	VALID_PCB_ASSERT(pcb);
-	MBUF_LEN_ASSERT(m, struct sdtp_data_header);
+	KASSERT(payload_size > 0, ("payload_size must be positive: %d", payload_size));
 
 	struct sdtp_rpc *rpc;
-	struct sdtp_data_header *header;
 	int error = 0;
 	uint64_t id;
 
-	header = mtod(m, struct sdtp_data_header *);
 	id = sdtp_local_id(header->common.sender_id_be);
 
 	rpc = sdtp_find_server_rpc(pcb, source, ntohs(header->common.sport_be), id);
@@ -432,7 +431,7 @@ sdtp_new_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source, struct mbuf
 	sdtp_lock_rpc_and_insert_pcb_list(pcb, rpc, id);
 
 	if (is_encrypted_rpc(rpc)) {
-		if (sdtp_payload_len(m) >= rpc->msgin.total_length) {
+		if (payload_size >= rpc->msgin.total_length) {
 			atomic_set_32(&rpc->flags_atomic, RPC_PKTS_READY);
 			sdtp_handoff_rpc(pcb, rpc);
 		}
@@ -784,11 +783,9 @@ sdtp_rpc_reap(struct sdtp_inpcb *pcb, bool reap_all)
 }
 
 static struct sdtp_expected_rpc_ptr
-sdtp_get_rpc(struct mbuf *m, struct sdtp_inpcb *pcb,
-    struct sdtp_common_header *header, struct in6_addr *source)
+sdtp_get_rpc(struct sdtp_inpcb *pcb, struct sdtp_common_header *header,
+	     struct in6_addr *source, int payload_size)
 {
-	KASSERT(m != NULL, ("m must be valid"));
-	MBUF_LEN_ASSERT(m, struct sdtp_common_header);
 	VALID_PCB_ASSERT(pcb);
 	KASSERT(header != NULL, ("header must be valid"));
 	KASSERT(source != NULL, ("source must be valid"));
@@ -803,7 +800,10 @@ sdtp_get_rpc(struct mbuf *m, struct sdtp_inpcb *pcb,
 
 	if (!is_client && header->type == SDTP_DATA) {
 		/* We are the RPC server and it's a DATA packet */
-		expected_rpc = sdtp_new_server_rpc(pcb, source, m);
+		KASSERT(payload_size > 0, ("payload_size must be positive: %d", payload_size));
+
+		expected_rpc = sdtp_new_server_rpc((struct sdtp_data_header *) header,
+				     pcb, source, payload_size);
 		if (!SDTP_IS_ERROR(expected_rpc) &&
 		    SDTP_GET_VAL(expected_rpc) != NULL) {
 			VALID_RPC_ASSERT(SDTP_GET_VAL(expected_rpc));
@@ -859,10 +859,8 @@ sdtp_request_retrans(struct sdtp_rpc *rpc)
 
 static void
 sdtp_need_ack_packet(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc,
-    struct mbuf *m, struct in6_addr *source)
+    struct sdtp_common_header *header, struct in6_addr *source)
 {
-	struct sdtp_common_header *header = mtod(m,
-	    struct sdtp_common_header *);
 	struct sdtp_ack_header ack;
 	struct sdtp_peer *peer;
 	uint64_t id = sdtp_local_id(header->sender_id_be);
@@ -905,10 +903,9 @@ sdtp_need_ack_packet(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc,
 }
 
 static void
-sdtp_ack_packet(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc, struct mbuf *m,
-    struct in6_addr *source)
+sdtp_ack_packet(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc,
+		struct sdtp_ack_header *header, struct in6_addr *source)
 {
-	struct sdtp_ack_header *header = mtod(m, struct sdtp_ack_header *);
 	int n = ntohs(header->num_acks_be);
 
 	if (rpc) {
@@ -934,11 +931,9 @@ sdtp_ack_packet(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc, struct mbuf *m,
 }
 
 static void
-sdtp_resend_packet(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc, struct mbuf *m,
-    struct in6_addr *source)
+sdtp_resend_packet(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc,
+		   struct sdtp_resend_header *header, struct in6_addr *source)
 {
-	struct sdtp_resend_header *header = mtod(m,
-	    struct sdtp_resend_header *);
 	struct sdtp_busy_header busy;
 
 	int header_offset = ntohl(header->offset_be);
@@ -947,7 +942,7 @@ sdtp_resend_packet(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc, struct mbuf *m,
 
 	if (rpc == NULL) {
 		sdtp_pcb_debug(pcb, "resend_packet: unknown rpc");
-		sdtp_send_unknown(pcb, m, source);
+		sdtp_send_unknown(pcb, &header->common, source);
 		return;
 	}
 
@@ -988,11 +983,9 @@ sdtp_resend_packet(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc, struct mbuf *m,
 }
 
 static void
-sdtp_cutoffs_packet(struct sdtp_inpcb *pcb, struct mbuf *m,
+sdtp_cutoffs_packet(struct sdtp_inpcb *pcb, struct sdtp_cutoffs_header *header,
     struct in6_addr *source)
 {
-	struct sdtp_cutoffs_header *header = mtod(m,
-	    struct sdtp_cutoffs_header *);
 	struct sdtp_peer *peer;
 	int i, error;
 
@@ -1019,8 +1012,7 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source,
 	VALID_PCB_ASSERT(pcb);
 	KASSERT(source != NULL, ("source must be valid"));
 
-	struct sdtp_common_header *header = mtod(m,
-	    struct sdtp_common_header *);
+	struct sdtp_common_header *header = SDTP_MTOD(m, struct sdtp_common_header *, 0);
 
 	KASSERT(header->type >= SDTP_DATA && header->type <= SDTP_ACK,
 	    ("header type must be valid (%#x)", header->type));
@@ -1033,8 +1025,9 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source,
 	bool consumed = false;
 	struct sdtp_rpc *rpc = NULL;
 	struct sdtp_expected_rpc_ptr expected_rpc;
+	int payload_size = (header->type == SDTP_DATA) ? sdtp_payload_len(m) : -1;
 
-	expected_rpc = sdtp_get_rpc(m, pcb, header, source);
+	expected_rpc = sdtp_get_rpc(pcb, header, source, payload_size);
 	if (SDTP_IS_ERROR(expected_rpc)) {
 		goto sdtp_handle_packet_error;
 	}
@@ -1058,19 +1051,22 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source,
 	}
 
 	case SDTP_RESEND:
-		sdtp_resend_packet(pcb, rpc, m, source);
+		sdtp_resend_packet(pcb, rpc,
+		     (struct sdtp_resend_header *) header, source);
 		break;
 
 	case SDTP_CUTOFFS:
-		sdtp_cutoffs_packet(pcb, m, source);
+		sdtp_cutoffs_packet(pcb,
+		      (struct sdtp_cutoffs_header *) header, source);
 		break;
 
 	case SDTP_NEED_ACK:
-		sdtp_need_ack_packet(pcb, rpc, m, source);
+		sdtp_need_ack_packet(pcb, rpc, header, source);
 		break;
 
 	case SDTP_ACK:
-		sdtp_ack_packet(pcb, rpc, m, source);
+		sdtp_ack_packet(pcb, rpc,
+		  (struct sdtp_ack_header *) header, source);
 		break;
 
 	case SDTP_GRANT:
