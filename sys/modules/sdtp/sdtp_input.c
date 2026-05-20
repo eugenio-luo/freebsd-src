@@ -50,7 +50,7 @@ sdtp_check_header_conditions(const struct sdtp_common_header *const header,
 
 static struct sdtp_inpcb *
 sdtp_get_pcb(struct sdtp *sdtp_struct,
-    const struct sdtp_common_header *const header)
+    const struct sdtp_common_header *const header, int offset)
 {
 	KASSERT(header != NULL, ("header must be valid"));
 	KASSERT(sdtp_struct != NULL, ("sdtp struct must be valid"));
@@ -64,10 +64,13 @@ sdtp_get_pcb(struct sdtp *sdtp_struct,
 	pcb = sdtp_find_inpcb(&sdtp_struct->port_map, dport);
 	mtx_unlock_spin(&sdtp_struct->port_map.write_spinlock);
 
-	if (pcb) {
-		VALID_PCB_ASSERT(pcb);
+	if (pcb == NULL || sdtp_so(pcb) == NULL
+		|| pcb->ip_header_length != offset) {
+
+		return (NULL);
 	}
-	return (pcb != NULL && sdtp_so(pcb) != NULL) ? pcb : NULL;
+
+	return pcb;
 }
 
 static void
@@ -128,7 +131,7 @@ sdtp_input(struct mbuf **mp, int *offp, int proto)
 		goto sdtp_input_done;
 	}
 
-	if ((pcb = sdtp_get_pcb(sdtp, header)) == NULL) {
+	if ((pcb = sdtp_get_pcb(sdtp, header, *offp)) == NULL) {
 		icmp_error(m, ICMP_UNREACH, ICMP_UNREACH_PORT, 0, 0);
 		goto sdtp_input_done;
 	}
