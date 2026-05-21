@@ -457,18 +457,19 @@ sdtp_new_server_rpc_error:
 
 static bool
 sdtp_add_packet(struct mbuf *m, struct sdtp_rpc *rpc,
-    struct sdtp_data_header *header)
+    struct sdtp_data_header *header, int iphlen)
 {
 	KASSERT(m != NULL, ("m must be valid"));
-	MBUF_LEN_ASSERT(m, struct sdtp_data_header);
+	MBUF_LEN_AT_LEAST(m, sizeof(struct sdtp_data_header) + iphlen);
 	KASSERT(m->m_flags & M_PKTHDR, ("mbuf must be a header mbuf"));
 	VALID_RPC_ASSERT(rpc);
 	RPC_LOCK_OWNED(rpc);
 	KASSERT(header != NULL, ("header must be valid"));
+	KASSERT(iphlen > 0, ("iphlen must be positive"));
 
 	struct sdtp_packet_tailq_entry *packet, *new;
 	int offset = ntohl(header->data_segment.offset_be);
-	int data_bytes = sdtp_payload_len(m);
+	int data_bytes = sdtp_payload_len(m, iphlen);
 	int floor = rpc->msgin.copied_out;
 	int ceiling = rpc->msgin.total_length;
 
@@ -480,11 +481,10 @@ sdtp_add_packet(struct mbuf *m, struct sdtp_rpc *rpc,
 		KASSERT(packet->data->m_flags & M_PKTHDR,
 		    ("packet must be a header mbuf"));
 
-		struct sdtp_data_header *h = mtod(packet->data,
-		    struct sdtp_data_header *);
+		struct sdtp_data_header *h = SDTP_MTOD(packet->data,
+		    struct sdtp_data_header *, iphlen);
 		int tmp_off = ntohl(h->data_segment.offset_be);
-		int tmp_dbytes = packet->data->m_pkthdr.len -
-		    sizeof(struct sdtp_data_header);
+		int tmp_dbytes = sdtp_payload_len(packet->data, iphlen);
 
 		KASSERT(tmp_dbytes > 0, ("tmp_dbytes must be positive"));
 
@@ -607,7 +607,7 @@ sdtp_data_packet(struct sdtp *sdtp, struct mbuf *m, struct sdtp_rpc *rpc,
 	VALID_PCB_ASSERT(pcb);
 	KASSERT(source != NULL, ("source must be valid"));
 
-	struct sdtp_data_header *header = mtod(m, struct sdtp_data_header *);
+	struct sdtp_data_header *header = SDTP_MTOD(m, struct sdtp_data_header *, pcb->iphlen);
 	sdtp_set_header_offset(header);
 	sdtp_data_header_debug(header, NULL);
 
@@ -619,7 +619,7 @@ sdtp_data_packet(struct sdtp *sdtp, struct mbuf *m, struct sdtp_rpc *rpc,
 		goto sdtp_data_packet_error;
 	}
 
-	if (!sdtp_add_packet(m, rpc, header)) {
+	if (!sdtp_add_packet(m, rpc, header, pcb->iphlen)) {
 		goto sdtp_data_packet_error;
 	}
 
@@ -1007,25 +1007,25 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source,
     struct sdtp_inpcb *pcb)
 {
 	KASSERT(m != NULL, ("m must be valid"));
-	MBUF_LEN_ASSERT(m, struct sdtp_common_header);
+	MBUF_LEN_AT_LEAST(m, sizeof(struct sdtp_common_header) + pcb->iphlen);
 	KASSERT(m->m_flags & M_PKTHDR, ("mbuf must be a header mbuf"));
 	VALID_PCB_ASSERT(pcb);
 	KASSERT(source != NULL, ("source must be valid"));
 
-	struct sdtp_common_header *header = SDTP_MTOD(m, struct sdtp_common_header *, 0);
+	struct sdtp_common_header *header = SDTP_MTOD(m, struct sdtp_common_header *, pcb->iphlen);
 
 	KASSERT(header->type >= SDTP_DATA && header->type <= SDTP_ACK,
 	    ("header type must be valid (%#x)", header->type));
-	KASSERT(m->m_pkthdr.len >=
+	KASSERT(m->m_pkthdr.len >= pcb->iphlen +
 		sdtp_header_lengths[header->type - SDTP_DATA],
 	    ("mbuf must be at least the size of its type header"));
-	KASSERT(m->m_len >= sdtp_header_lengths[header->type - SDTP_DATA],
+	KASSERT(m->m_len >= pcb->iphlen + sdtp_header_lengths[header->type - SDTP_DATA],
 	    ("mbuf must contain its type header"));
 
 	bool consumed = false;
 	struct sdtp_rpc *rpc = NULL;
 	struct sdtp_expected_rpc_ptr expected_rpc;
-	int payload_size = (header->type == SDTP_DATA) ? sdtp_payload_len(m) : -1;
+	int payload_size = (header->type == SDTP_DATA) ? sdtp_payload_len(m, pcb->iphlen) : -1;
 
 	expected_rpc = sdtp_get_rpc(pcb, header, source, payload_size);
 	if (SDTP_IS_ERROR(expected_rpc)) {

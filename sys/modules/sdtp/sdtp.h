@@ -147,21 +147,22 @@ CTASSERT(sizeof(struct sdtp_cutoffs_header) <= SDTP_MAX_HEADER);
 
 extern int sdtp_header_lengths[];
 
-static inline int
-sdtp_payload_len(struct mbuf *m)
-{
-	KASSERT(m->m_len >= sizeof(struct sdtp_data_header),
-	 ("%s: header must be at least %lu, instead %d", __func__,
-	 sizeof(struct sdtp_data_header), m->m_len));
-	KASSERT(m->m_flags & M_PKTHDR, ("mbuf must be a header mbuf"));
+#define SDTP_MTOD(MBUF, T, OFFSET) \
+	((T)(mtod((MBUF), char *) + (OFFSET)))
 
-	struct sdtp_common_header *header = mtod(m, struct sdtp_common_header *);
+static inline int
+sdtp_payload_len(struct mbuf *m, int iphlen)
+{
+	KASSERT(m->m_len >= sizeof(struct sdtp_data_header) + iphlen,
+	 ("%s: header must be at least %lu, instead %d", __func__,
+	 sizeof(struct sdtp_data_header) + iphlen, m->m_len));
+	KASSERT(m->m_flags & M_PKTHDR, ("mbuf must be a header mbuf"));
+	KASSERT(iphlen > 0, ("iphlen must be positive"));
+
+	struct sdtp_common_header *header = SDTP_MTOD(m, struct sdtp_common_header *, iphlen);
 	KASSERT(header->type == SDTP_DATA, ("mbuf must be DATA type"));
 
-	return m->m_pkthdr.len - sizeof(struct sdtp_data_header);
+	return m->m_pkthdr.len - sizeof(struct sdtp_data_header) - iphlen;
 }
-
-#define SDTP_MTOD(MBUF, T, OFFSET) \
-	((T)(mtod((MBUF), char *) + OFFSET))
 
 #endif

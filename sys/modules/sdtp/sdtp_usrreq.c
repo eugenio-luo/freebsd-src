@@ -176,7 +176,7 @@ sdtp_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc)
 #define MAX_BUFS 20
 	struct mbuf *bufs[MAX_BUFS];
 
-	int error = 0, n = 0;
+	int error = 0, n = 0, iphlen = rpc->sdtpcb->iphlen;
 
 	KASSERT(rpc->msgin.num_bufs > 0,
 	    ("the num of bufs should be positive: %d", rpc->msgin.num_bufs));
@@ -199,14 +199,14 @@ sdtp_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc)
 		    (uintptr_t)rpc, (uintptr_t)buf, (uintptr_t)buf->m_data);
 		KASSERT(buf->m_flags & M_PKTHDR,
 		    ("buf must have packet header"));
-		KASSERT(buf->m_pkthdr.len >= sizeof(struct sdtp_data_header),
+		KASSERT(buf->m_pkthdr.len >= sizeof(struct sdtp_data_header) + iphlen,
 		    ("buf %d (size: %d) must contain within its mbuf chain the size of sdtp_data_header\n",
 			n, buf->m_pkthdr.len));
-		KASSERT(buf->m_len >= sizeof(struct sdtp_data_header),
+		KASSERT(buf->m_len >= sizeof(struct sdtp_data_header) + iphlen,
 		    ("buf %d (size: %d) must be the size of sdtp_data_header\n",
 			n, buf->m_len));
 
-		header = mtod(buf, struct sdtp_data_header *);
+		header = SDTP_MTOD(buf, struct sdtp_data_header *, iphlen);
 		segment_offset = ntohl(header->data_segment.offset_be);
 
 		if (rpc->msgin.copied_out < segment_offset) {
@@ -219,8 +219,7 @@ sdtp_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc)
 		sdtp_pool_free_packet_tailq_entry(buf_entry);
 
 		--rpc->msgin.num_bufs;
-		rpc->msgin.copied_out = segment_offset + buf->m_pkthdr.len -
-		    sizeof(struct sdtp_data_header);
+		rpc->msgin.copied_out = segment_offset + sdtp_payload_len(buf, iphlen);
 
 		if (n < MAX_BUFS) {
 			continue;
@@ -241,25 +240,24 @@ sdtp_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc)
 			    ("buf %d (%d) must contain the size of sdtp_data_header\n",
 				n, buf->m_len));
 
-			header = mtod(buf, struct sdtp_data_header *);
-			int rem = buf->m_pkthdr.len -
-			    sizeof(struct sdtp_data_header);
+			header = SDTP_MTOD(buf, struct sdtp_data_header *, iphlen);
+			int rem = sdtp_payload_len(buf, iphlen);
 
 			if (rem < 0) {
 				error = EINVAL;
 				continue;
 			}
 
-			KASSERT(buf->m_len - sizeof(*header) > 0,
+			KASSERT(buf->m_len - sizeof(*header) - iphlen > 0,
 			    ("buf size without header must be positive\n"));
-			error = uiomove(mtod(buf, char *) + sizeof(*header),
-			    buf->m_len - sizeof(*header), uio);
+			error = uiomove(mtod(buf, char *) + sizeof(*header) + iphlen,
+			    buf->m_len - sizeof(*header) - iphlen, uio);
 			if (error) {
 				continue;
 			}
 
 			sdtp_rpc_debug(rpc, "copying %d length to userspace",
-			    buf->m_len - sizeof(*header));
+			    buf->m_len - sizeof(*header) - iphlen);
 
 			struct mbuf *m = buf->m_next;
 			for (; m != NULL && uio->uio_resid > 0 && rem > 0;

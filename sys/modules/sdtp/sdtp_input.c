@@ -31,11 +31,12 @@ extern struct sdtp *sdtp;
 
 static bool
 sdtp_check_header_conditions(const struct sdtp_common_header *const header,
-    const struct mbuf *const m)
+    const struct mbuf *const m, int iphlen)
 {
 	KASSERT(header != NULL, ("header must be valid"));
 	KASSERT(m != NULL, ("m must be valid"));
-	MBUF_LEN_ASSERT(m, struct sdtp_common_header);
+	KASSERT(m != NULL, ("m must be valid"));
+	MBUF_LEN_AT_LEAST(m, sizeof(header) + iphlen);
 
 	if (header->type < SDTP_DATA || header->type > SDTP_ACK) {
 		return (false);
@@ -99,17 +100,6 @@ sdtp_parse_header_and_src_addr(struct mbuf *m, int iphlen,
 	*addr = ipv4_to_ipv6(&ip_header->ip_src);
 }
 
-static struct mbuf *
-sdtp_pull_mbuf_up_to_sdtp_header(struct mbuf *m, uint8_t type, int iphlen)
-{
-	KASSERT(m != NULL, ("m must be valid"));
-	KASSERT(type >= SDTP_DATA && type <= SDTP_ACK, ("type must be valid"));
-	KASSERT(iphlen > 0, ("iphlen must be positive"));
-
-	m_adj(m, iphlen);
-	return (m_pullup(m, sdtp_header_lengths[type - SDTP_DATA]));
-}
-
 int
 sdtp_input(struct mbuf **mp, int *offp, int proto)
 {
@@ -126,7 +116,7 @@ sdtp_input(struct mbuf **mp, int *offp, int proto)
 
 	sdtp_parse_header_and_src_addr(m, *offp, &header, &src_addr);
 
-	if (!sdtp_check_header_conditions(header, m)) {
+	if (!sdtp_check_header_conditions(header, m, *offp)) {
 		m_freem(m);
 		goto sdtp_input_done;
 	}
@@ -136,7 +126,8 @@ sdtp_input(struct mbuf **mp, int *offp, int proto)
 		goto sdtp_input_done;
 	}
 
-	if ((m = sdtp_pull_mbuf_up_to_sdtp_header(m, header->type, *offp)) ==
+	/* We want to guarantee that the entire header is accessible */
+	if ((m = m_pullup(m, *offp + sdtp_header_lengths[header->type - SDTP_DATA])) ==
 	    NULL) {
 		goto sdtp_input_done;
 	}
