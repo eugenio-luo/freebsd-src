@@ -56,7 +56,7 @@ sdtp_send_control_buf(struct sdtp_inpcb *pcb, struct sdtp_peer *peer,
 	struct inpcb *inp = &pcb->inp;
 	struct epoch_tracker et;
 	int error, family = sdtp_so(pcb)->so_proto->pr_domain->dom_family;
-	size_t iphlen = pcb->ip_header_length;
+	size_t iphlen = pcb->iphlen;
 
 	m = m_gethdr(M_NOWAIT, MT_DATA);
 	if (!m) {
@@ -274,7 +274,7 @@ sdtp_create_packet_mbuf(struct sdtp_rpc *rpc, struct uio *uio, int m_size,
 
 	struct sdtp_data_header *header =
 	    (struct sdtp_data_header *)(mtod(m, char *) +
-		rpc->sdtpcb->ip_header_length);
+		rpc->sdtpcb->iphlen);
 	header->common.sport_be = htons(rpc->sdtpcb->port);
 	header->common.dport_be = htons(rpc->dport);
 	SDTP_SET_DOFF(header);
@@ -374,7 +374,7 @@ sdtp_fill_packets_slist(struct sdtp_rpc *rpc, struct uio *uio,
 		sdtp_rpc_debug(rpc, "buffer slist: offset %d, length %d",
 		    ntohl(
 			((struct sdtp_data_header *)(mtod(entry->data, char *) +
-			     rpc->sdtpcb->ip_header_length))
+			     rpc->sdtpcb->iphlen))
 			    ->data_segment.offset_be),
 		    entry->data->m_pkthdr.len);
 
@@ -421,7 +421,7 @@ sdtp_send_data(struct sdtp_rpc *rpc, struct mbuf *buf, int priority)
 
 	// nh = rpc->peer->nh;
 	header = (struct sdtp_data_header *)(mtod(buf, char *) +
-	    rpc->sdtpcb->ip_header_length);
+	    rpc->sdtpcb->iphlen);
 	header->cutoff_version_be = rpc->peer->cutoff_version_be;
 
 	// TODO: we need to have custom checksum for SDTP
@@ -505,7 +505,7 @@ sdtp_send_next_data(struct sdtp_rpc *rpc, bool force)
 
 #ifdef SDTP_TEST
 		header = (struct sdtp_data_header *)(mtod(buf, char *) +
-		    rpc->sdtpcb->ip_header_length);
+		    rpc->sdtpcb->iphlen);
 		if (header->data_segment.offset_be == 0) {
 			i = 0;
 		}
@@ -641,11 +641,11 @@ sdtp_resend_data(struct sdtp_rpc *rpc, int start, int end, int priority)
 	SLIST_FOREACH(packet, &rpc->msgout.packets, link) {
 		header = ((
 		    struct sdtp_data_header *)(mtod(packet->data, char *) +
-		    rpc->sdtpcb->ip_header_length));
+		    rpc->sdtpcb->iphlen));
 		offset = ntohl(header->data_segment.offset_be);
 		dbytes = packet->data->m_pkthdr.len -
 		    sizeof(struct sdtp_data_header) -
-		    rpc->sdtpcb->ip_header_length;
+		    rpc->sdtpcb->iphlen;
 
 		if (offset >= end) {
 			break;

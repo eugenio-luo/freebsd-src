@@ -143,7 +143,7 @@ CTASSERT(sizeof(struct sdtp_cutoffs_header) <= SDTP_MAX_HEADER);
 		    << 2;                                                    \
 	} while (0)
 
-#define IP_SDTP_HEADER_SIZE(PCB, TYPE) ((PCB)->ip_header_length + sizeof(TYPE))
+#define IP_SDTP_HEADER_SIZE(PCB, TYPE) ((PCB)->iphlen + sizeof(TYPE))
 
 extern int sdtp_header_lengths[];
 

@@ -65,7 +65,7 @@ sdtp_get_pcb(struct sdtp *sdtp_struct,
 	mtx_unlock_spin(&sdtp_struct->port_map.write_spinlock);
 
 	if (pcb == NULL || sdtp_so(pcb) == NULL
-		|| pcb->ip_header_length != offset) {
+		|| pcb->iphlen != offset) {
 
 		return (NULL);
 	}

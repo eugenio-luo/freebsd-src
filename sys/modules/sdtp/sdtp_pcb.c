@@ -164,7 +164,7 @@ sdtp_inpcb_alloc(struct socket *so, struct sdtp *sdtp)
 	inp->last_locker = "none";
 	inp->sdtp = sdtp;
 	inp->shutdown = false;
-	inp->ip_header_length = (INP_SOCKAF(so) == AF_INET) ?
+	inp->iphlen = (INP_SOCKAF(so) == AF_INET) ?
 	    SDTP_IPV4_HEADER_LENGTH :
 	    SDTP_IPV6_HEADER_LENGTH;
 

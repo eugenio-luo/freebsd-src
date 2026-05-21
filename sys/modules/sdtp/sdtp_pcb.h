@@ -68,7 +68,7 @@ struct sdtp_inpcb {
 	struct sdtp *sdtp;
 	bool shutdown;
 	uint16_t port;
-	int ip_header_length;
+	int iphlen;
 
 	struct sdtp_pcbmap_link pcbmap_links;
 
