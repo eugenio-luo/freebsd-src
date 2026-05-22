@@ -169,6 +169,7 @@ sdtp_clone_reuse_ctx(struct sdtp_inpcb *pcb, uint32_t addr_be, uint16_t port_be,
 	if (reuse_ctx == NULL) {
 		return (NULL);
 	}
+	KASSERT(reuse_ctx->tx.active || reuse_ctx->rx.active, ("at least one direction must be active"));
 
 	ctx = sdtp_get_ctx(pcb, addr_be, port_be, error);
 	if (ctx == NULL) {
@@ -183,12 +184,35 @@ sdtp_clone_reuse_ctx(struct sdtp_inpcb *pcb, uint32_t addr_be, uint16_t port_be,
 	if (ctx->tx.active) {
 		ctx->tx.copy = true;
 		ctx->tx.session = NULL;
+
+		struct tls_enable *en = &ctx->tx.en;
+		KASSERT(en->cipher_algorithm == CRYPTO_AES_NIST_GCM_16,
+			("cipher algorithm must be CRYPTO_AES_NIST_GCM_16, instead: %d",
+			 en->cipher_algorithm));
+		KASSERT(en->tls_vmajor == TLS_MAJOR_VER_ONE,
+			("tls major version must be 1, instead: %d",
+			 en->tls_vmajor));
+		KASSERT(en->tls_vminor == TLS_MINOR_VER_TWO,
+			("tls minor version must be 2, instead: %d",
+			 en->tls_vminor));
 	}
 	if (ctx->rx.active) {
 		ctx->rx.copy = true;
 		ctx->rx.session = NULL;
+
+		struct tls_enable *en = &ctx->rx.en;
+		KASSERT(en->cipher_algorithm == CRYPTO_AES_NIST_GCM_16,
+			("cipher algorithm must be CRYPTO_AES_NIST_GCM_16, instead: %d",
+			 en->cipher_algorithm));
+		KASSERT(en->tls_vmajor == TLS_MAJOR_VER_ONE,
+			("tls major version must be 1, instead: %d",
+			 en->tls_vmajor));
+		KASSERT(en->tls_vminor == TLS_MINOR_VER_TWO,
+			("tls minor version must be 2, instead: %d",
+			 en->tls_vminor));
 	}
 
+	sdtp_pcb_debug(pcb, "cloned ctx with rx: %d, tx: %d", ctx->rx.active, ctx->tx.active);
 	return (ctx);
 }
 
