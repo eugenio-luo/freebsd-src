@@ -243,7 +243,6 @@ sdtp_rpc_ctx_init(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc)
 	KASSERT(NH_IS_VALID(rpc->peer->nh), ("nh must be valid"));
 	mtu = rpc->peer->nh->nh_mtu;
 
-	sdtp_ctx_put(ctx);
 	rpc->crypto.ctx = ctx;
 	rpc->crypto.offset = 0;
 	rpc->crypto.max = mtu -
