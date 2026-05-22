@@ -111,6 +111,7 @@ sdtp_input(struct mbuf **mp, int *offp, int proto)
 	/* We want to access at least the common header */
 	if ((m = m_pullup(m, *offp + sizeof(struct sdtp_common_header))) ==
 	    NULL) {
+		sdtp_debug("%s: failed pullup common header", __func__);
 		goto sdtp_input_done;
 	}
 
@@ -118,10 +119,13 @@ sdtp_input(struct mbuf **mp, int *offp, int proto)
 
 	if (!sdtp_check_header_conditions(header, m, *offp)) {
 		m_freem(m);
+		sdtp_debug("%s: failed header conditions: header type: %d, mbuf total length: %d",
+			__func__, header->type, m->m_pkthdr.len);
 		goto sdtp_input_done;
 	}
 
 	if ((pcb = sdtp_get_pcb(sdtp, header, *offp)) == NULL) {
+		sdtp_debug("%s: can't find pcb", __func__);
 		icmp_error(m, ICMP_UNREACH, ICMP_UNREACH_PORT, 0, 0);
 		goto sdtp_input_done;
 	}
@@ -129,6 +133,7 @@ sdtp_input(struct mbuf **mp, int *offp, int proto)
 	/* We want to guarantee that the entire header is accessible */
 	if ((m = m_pullup(m, *offp + sdtp_header_lengths[header->type - SDTP_DATA])) ==
 	    NULL) {
+		sdtp_debug("%s: failed pullup typed header", __func__);
 		goto sdtp_input_done;
 	}
 
