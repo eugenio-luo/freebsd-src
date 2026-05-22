@@ -423,6 +423,8 @@ sdtp_ctx_enable(struct sdtp_inpcb *pcb, struct sockopt *sopt, bool is_tx)
 	sdtp_pcb_debug(pcb, "ktls %s enabled", (is_tx) ? "tx" : "rx");
 	sdtp_ctx_put(ctx);
 
+	pcb->ctx_map.active = true;
+
 sdtp_ctx_enable_locked:
 	sdtp_pcb_unlock(pcb);
 
