@@ -1035,6 +1035,16 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source,
 
 	if (rpc) {
 		sdtp_rpc_hold(rpc);
+
+		/* if RPC is encrypted, more data need to be pulled up for the TLS record header */
+		if (is_encrypted_rpc(rpc) && header->type == SDTP_DATA) {
+			int pullup_size = pcb->iphlen + sizeof(struct sdtp_data_header)
+				- sizeof(struct sdtp_data_segment) + sizeof(struct tls_record_layer);
+
+			if ((m = m_pullup(m, pullup_size)) == NULL) {
+				goto sdtp_handle_packet_error;
+			}
+		}
 	}
 
 	if (!sdtp_preprocess_rpc(rpc, header)) {
