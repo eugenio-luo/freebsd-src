@@ -476,6 +476,11 @@ sdtp_add_packet(struct mbuf *m, struct sdtp_rpc *rpc,
 	sdtp_data_header_debug(header, "size: %d", data_bytes);
 	KASSERT(data_bytes > 0, ("data_bytes must be positive"));
 
+	if (is_encrypted_rpc(rpc)) {
+		struct sdtp_rx_logical_info info =
+			sdtp_calc_rx_logical_info(rpc, m);
+	}
+
 	TAILQ_FOREACH_REVERSE(packet, &rpc->msgin.packets, sdtp_packet_tailq,
 	    link) {
 		KASSERT(packet->data->m_flags & M_PKTHDR,

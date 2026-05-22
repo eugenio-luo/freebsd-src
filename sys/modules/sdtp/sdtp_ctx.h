@@ -74,9 +74,19 @@ struct sdtp_ctx_map {
 	bool active;
 };
 
+struct sdtp_rx_logical_info {
+	int start;
+	int length;
+	int end;
+	int record_data_len;
+	int record_data_offset;
+	bool trailer_only;
+};
+
 int sdtp_rpc_ctx_init(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc);
 int sdtp_ctx_enable(struct sdtp_inpcb *pcb, struct sockopt *sopt, bool is_tx);
 void sdtp_free_ctx(struct sdtp_ctx *ctx);
+struct sdtp_rx_logical_info sdtp_calc_rx_logical_info(struct sdtp_rpc *rpc, struct mbuf *m);
 
 static inline void
 sdtp_ctx_hold(struct sdtp_ctx *ctx)

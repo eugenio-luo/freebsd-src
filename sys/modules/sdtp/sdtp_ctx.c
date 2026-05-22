@@ -21,6 +21,7 @@
 #include <net/if_types.h>
 #include <net/route/nhop.h>
 #include <netinet/in.h>
+#include <netinet/ip.h>
 
 #include <opencrypto/cryptodev.h>
 #include <opencrypto/ktls.h>
@@ -436,4 +437,198 @@ sdtp_ctx_enable_out:
 		ktls_cleanup_tls_enable(&sen.tls);
 	}
 	return (error);
+}
+
+static inline uint8_t
+sdtp_extra_ip_id(struct sdtp_data_header *header)
+{
+	return (header->retransmit >> 4) & 0x0F;
+}
+
+static inline uint16_t
+sdtp_logical_ip_id(struct sdtp_data_header *header, struct ip *ip_header)
+{
+	if (header->retransmit & 0x1) {
+		return sdtp_extra_ip_id(header);
+	}
+
+	return ntohs(ip_header->ip_id);
+}
+
+static inline uint32_t
+sdtp_gso_offset(struct sdtp_data_header *header)
+{
+	return ((uint8_t) header->padding[0] << 16)
+		| ((uint8_t) header->padding[1] << 8)
+		| ((uint8_t) header->padding[2]);
+}
+
+/*
+ * For sdtp_pre_len and sdtp_post_len we cannot use the ktls_session
+ * parameters because we don't have the guarantee that they are present.
+ */
+
+static inline int
+sdtp_pre_len(struct sdtp_rpc *rpc)
+{
+	VALID_RPC_ASSERT(rpc);
+	KASSERT(rpc->crypto.ctx != NULL, ("ctx must be valid"));
+
+	/*
+	KASSERT(rpc->crypto.ctx->rx.session != NULL, ("RX session must be valid"));
+	struct ktls_session *session = rpc->crypto.ctx->rx.session;
+	int len = session->params.tls_hlen;
+	*/
+
+	struct tls_enable *en = &rpc->crypto.ctx->rx.en;
+
+	KASSERT(en->cipher_algorithm == CRYPTO_AES_NIST_GCM_16,
+		("cipher algorithm must be CRYPTO_AES_NIST_GCM_16, instead: %d",
+		 en->cipher_algorithm));
+	KASSERT(en->tls_vmajor == TLS_MAJOR_VER_ONE,
+		("tls major version must be 1, instead: %d",
+		 en->tls_vmajor));
+	KASSERT(en->tls_vminor == TLS_MINOR_VER_TWO,
+		("tls minor version must be 2, instead: %d",
+		 en->tls_vminor));
+
+	int len = sizeof(struct tls_record_layer) + sizeof(uint64_t);
+	KASSERT(len > 0, ("%s: len must be positive: %d", __func__, len));
+	return (len);
+}
+
+static inline int
+sdtp_post_len(struct sdtp_rpc *rpc)
+{
+	VALID_RPC_ASSERT(rpc);
+	KASSERT(rpc->crypto.ctx != NULL, ("ctx must be valid"));
+
+	/*
+	KASSERT(rpc->crypto.ctx->rx.session != NULL, ("RX session must be valid"));
+	struct ktls_session *session = rpc->crypto.ctx->rx.session;
+	int len = session->params.tls_tlen;
+	*/
+
+	struct tls_enable *en = &rpc->crypto.ctx->rx.en;
+
+	KASSERT(en->cipher_algorithm == CRYPTO_AES_NIST_GCM_16,
+		("cipher algorithm must be CRYPTO_AES_NIST_GCM_16"));
+	KASSERT(en->tls_vmajor == TLS_MAJOR_VER_ONE,
+		("tls major version must be 1"));
+	KASSERT(en->tls_vminor == TLS_MINOR_VER_TWO,
+		("tls minor version must be 2"));
+
+	int len = AES_GMAC_HASH_LEN;
+	KASSERT(len > 0, ("%s: len must be positive: %d", __func__, len));
+	return (len);
+}
+
+static inline int
+sdtp_logical_offset(struct sdtp_rpc *rpc, uint16_t ip_id, uint32_t gso_offset)
+{
+	VALID_RPC_ASSERT(rpc);
+
+	int max = rpc->crypto.max, extra_len = sdtp_pre_len(rpc) + sdtp_post_len(rpc);
+	int offset = (int)(ip_id * max + gso_offset);
+
+	if (ip_id != 0) {
+		offset -= extra_len;
+	}
+
+	KASSERT(offset >= 0, ("offset must be not negative: %d", offset));
+	return (offset);
+}
+
+static inline int
+sdtp_logical_data_bytes(struct sdtp_rpc *rpc, struct mbuf *m, int iphlen, uint16_t ip_id)
+{
+	VALID_RPC_ASSERT(rpc);
+
+	int len = sdtp_payload_len(m, iphlen);
+	int post_len = sdtp_post_len(rpc);
+	int extra_len = sdtp_pre_len(rpc) + post_len;
+
+	if (ip_id == 0) {
+		len -= extra_len;
+	}
+	KASSERT(len > 0, ("%s: len must be positive: %d", __func__, len));
+
+	if (len + sizeof(struct sdtp_data_segment) > post_len) {
+		return len;
+	}
+	return len + sizeof(struct sdtp_data_segment);
+}
+
+static inline bool
+sdtp_trailer_only(struct sdtp_rpc *rpc, int data_bytes, uint16_t ip_id)
+{
+	VALID_RPC_ASSERT(rpc);
+
+	if (ip_id == 0) {
+		return false;
+	}
+
+	return (data_bytes <= sdtp_post_len(rpc));
+}
+
+struct sdtp_rx_logical_info
+sdtp_calc_rx_logical_info(struct sdtp_rpc *rpc, struct mbuf *m)
+{
+	VALID_RPC_ASSERT(rpc);
+	VALID_PCB_ASSERT(rpc->sdtpcb);
+	KASSERT(m != NULL, ("m must be valid"));
+
+	int iphlen = rpc->sdtpcb->iphlen;
+	int payload_len = sdtp_payload_len(m, iphlen);
+	int record_len, max_frame_data;
+	MBUF_LEN_AT_LEAST(m, sizeof(struct sdtp_data_header) - sizeof(struct sdtp_data_segment)
+		   + iphlen + sizeof(struct tls_record_layer));
+
+	struct sdtp_data_header *header = SDTP_MTOD(m, struct sdtp_data_header *, iphlen);
+	struct ip *ip_header = mtod(m, struct ip *);
+	uint8_t *record_header;
+
+	struct sdtp_rx_logical_info info;
+	uint16_t ip_id = sdtp_logical_ip_id(header, ip_header);
+	uint32_t gso_offset = sdtp_gso_offset(header);
+
+	info.start = sdtp_logical_offset(rpc, ip_id, gso_offset);
+	info.length = sdtp_logical_data_bytes(rpc, m, iphlen, ip_id);
+	info.end = info.start + info.length;
+	info.trailer_only = sdtp_trailer_only(rpc, info.length, ip_id);
+
+	if (ip_id != 0 || payload_len + sizeof(struct sdtp_data_header) < sdtp_pre_len(rpc)) {
+		goto sdtp_calc_rx_logical_info_out;
+	}
+
+	info.record_data_offset = info.start;
+	record_header = SDTP_MTOD(m, uint8_t *, iphlen) + sizeof(struct sdtp_data_header)
+		- sizeof(struct sdtp_data_segment);
+
+	if ((record_header[0] != 0x17) || (record_header[1] != 0x03) || (record_header[2] != 0x03)) {
+		sdtp_rpc_debug(rpc, "invalid TLS record: %d, %d, %d",
+		 record_header[0], record_header[1], record_header[2]);
+		goto sdtp_calc_rx_logical_info_out;
+	}
+
+	record_len = (((uint16_t) record_header[3]) << 8) | (record_header[4] & 0xFF);
+	if (record_len <= 0) {
+		sdtp_rpc_debug(rpc, "TLS record len not positive: %d", record_len);
+		goto sdtp_calc_rx_logical_info_out;
+	}
+
+	info.record_data_len = record_len + sizeof(struct tls_record_layer) - sdtp_post_len(rpc);
+	max_frame_data = rpc->crypto.max + sizeof(struct sdtp_data_segment);
+	info.record_data_len -= ((info.record_data_len + max_frame_data - 1) / max_frame_data)
+		* sizeof(struct sdtp_data_segment);
+	info.record_data_len -= sdtp_pre_len(rpc);
+
+	sdtp_rpc_debug(rpc, "start: %d, length: %d, end: %d, trailer_only: %d, record_data_offset: %d, record_data_len: %d",
+		info.start, info.length, info.end, info.trailer_only, info.record_data_offset, info.record_data_len);
+	return info;
+
+sdtp_calc_rx_logical_info_out:
+	info.record_data_offset = -1;
+	info.record_data_len = -1;
+	return info;
 }
