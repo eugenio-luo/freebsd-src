@@ -170,131 +170,150 @@ sdtp_register_interest_error:
 	return error;
 }
 
+#define MAX_BUFS 20
+
+static int
+sdtp_collect_bufs(struct sdtp_rpc *rpc, struct mbuf *bufs[MAX_BUFS], int iphlen)
+{
+	VALID_RPC_ASSERT(rpc);
+	RPC_LOCK_OWNED(rpc);
+	KASSERT(iphlen > 0, ("iphlen must be positive"));
+
+	int n = 0, segment_offset = 0;
+	struct sdtp_packet_tailq_entry *entry;
+	struct sdtp_data_header *header;
+	struct mbuf *m;
+
+	for (int i = 0; i < MAX_BUFS; ++i) {
+		if (rpc->msgin.copied_out >= rpc->msgin.total_length) {
+			break;
+		}
+
+		entry = TAILQ_FIRST(&rpc->msgin.packets);
+		if (entry == NULL) {
+			break;
+		}
+
+		m = entry->data;
+
+		KASSERT(m->m_flags & M_PKTHDR, ("buf must have packet header"));
+		KASSERT(m->m_pkthdr.len >= sizeof(struct sdtp_data_header) + iphlen,
+			("buf %d (size: %d) must contain within its mbuf chain the headers\n",
+			n, m->m_pkthdr.len));
+		KASSERT(m->m_len >= sizeof(struct sdtp_data_header) + iphlen,
+			("buf %d (size: %d) must be the headers\n", n, m->m_len));
+
+		header = SDTP_MTOD(m, struct sdtp_data_header *, iphlen);
+		segment_offset = ntohl(header->data_segment.offset_be);
+
+		if (rpc->msgin.copied_out < segment_offset) {
+			break;
+		}
+
+		bufs[n++] = m;
+		TAILQ_REMOVE(&rpc->msgin.packets, entry, link);
+		sdtp_pool_free_packet_tailq_entry(entry);
+
+		--rpc->msgin.num_bufs;
+		rpc->msgin.copied_out = segment_offset + sdtp_payload_len(m, iphlen);
+	}
+
+	KASSERT(n >= 0, ("n must not be negative"));
+	return (n);
+}
+
+static int
+__sdtp_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc, struct mbuf *bufs[MAX_BUFS], int n, int iphlen)
+{
+	KASSERT(uio != 0, ("uio must be valid"));
+	VALID_RPC_ASSERT(rpc);
+	RPC_LOCK_OWNED(rpc);
+	KASSERT(!(rpc->flags_atomic & RPC_COPYING_TO_USER), ("RPC_COPYING_TO_USER flag must be off"));
+	KASSERT(n > 0, ("n must be positive"));
+	KASSERT(iphlen > 0, ("iphlen must be positive"));
+
+	int error = 0, rem, buf_header_rem;
+	struct mbuf *m;
+	struct sdtp_data_header *header;
+
+	atomic_set_32(&rpc->flags_atomic, RPC_COPYING_TO_USER);
+	sdtp_rpc_unlock(rpc);
+
+	for (int i = 0; i < n; ++i) {
+		m = bufs[i];
+
+		KASSERT(m->m_len >= sizeof(struct sdtp_data_header) + iphlen,
+			("buf %d (%d) must contain the size of headers\n",
+			n, m->m_len));
+
+		header = SDTP_MTOD(m, struct sdtp_data_header *, iphlen);
+		rem = sdtp_payload_len(m, iphlen);
+		buf_header_rem = m->m_len - sizeof(*header) - iphlen;
+		KASSERT(rem > 0, ("rem must be positive"));
+		KASSERT(buf_header_rem > 0, ("buf_header_rem must be positive"));
+
+		error = uiomove((char *)(header + 1), buf_header_rem, uio);
+		if (error != 0) {
+			break;
+		}
+
+		rem -= buf_header_rem;
+		m = m->m_next;
+		for (; m != NULL && uio->uio_resid > 0 && rem > 0; m = m->m_next) {
+			int len = min(m->m_len, uio->uio_resid);
+			len = min(len, rem);
+
+			sdtp_rpc_debug(rpc, "copying %d length to userspace", len);
+			error = uiomove(mtod(m, char *), len, uio);
+			if (error) {
+				break;
+			}
+			rem -= len;
+		}
+		if (error) {
+			break;
+		}
+
+		KASSERT(uio->uio_resid == 0 || rem == 0, ("uio_resid (%zd) or rem (%d) must be 0",
+			uio->uio_resid, rem));
+		SDTP_METRIC(rpc->sdtpcb, recv_pkts_atomic, 1);
+	}
+
+	for (int i = 0; i < n; ++i) {
+		// TODO: buffer should be free'd here?
+		// TODO: sdtp_handle_acks(rpc, bufs[i]);
+		sdtp_free_mbuf(bufs[i]);
+		SDTP_METRIC(rpc->sdtpcb, freed_recv_pkts_atomic, 1);
+	}
+
+	sdtp_rpc_lock(rpc);
+	atomic_clear_32(&rpc->flags_atomic, RPC_COPYING_TO_USER);
+
+	return (error);
+}
+
 static int
 sdtp_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc)
 {
-#define MAX_BUFS 20
 	struct mbuf *bufs[MAX_BUFS];
-
 	int error = 0, n = 0, iphlen = rpc->sdtpcb->iphlen;
 
 	KASSERT(rpc->msgin.num_bufs > 0,
 	    ("the num of bufs should be positive: %d", rpc->msgin.num_bufs));
 
 	while (true) {
-		struct sdtp_packet_tailq_entry *buf_entry = TAILQ_FIRST(
-		    &rpc->msgin.packets);
-		struct sdtp_data_header *header;
-		int i, segment_offset;
-
-		if (buf_entry == NULL ||
-		    (rpc->msgin.copied_out >= rpc->msgin.total_length)) {
-			goto sdtp_copy_to_user_copy;
-		}
-
-		struct mbuf *buf = buf_entry->data;
-
-		sdtp_debug(
-		    "sdtp_copy_to_user called with rpc: %#lx, buf: %#lx, buf data: %#lx\n",
-		    (uintptr_t)rpc, (uintptr_t)buf, (uintptr_t)buf->m_data);
-		KASSERT(buf->m_flags & M_PKTHDR,
-		    ("buf must have packet header"));
-		KASSERT(buf->m_pkthdr.len >= sizeof(struct sdtp_data_header) + iphlen,
-		    ("buf %d (size: %d) must contain within its mbuf chain the size of sdtp_data_header\n",
-			n, buf->m_pkthdr.len));
-		KASSERT(buf->m_len >= sizeof(struct sdtp_data_header) + iphlen,
-		    ("buf %d (size: %d) must be the size of sdtp_data_header\n",
-			n, buf->m_len));
-
-		header = SDTP_MTOD(buf, struct sdtp_data_header *, iphlen);
-		segment_offset = ntohl(header->data_segment.offset_be);
-
-		if (rpc->msgin.copied_out < segment_offset) {
-			goto sdtp_copy_to_user_copy;
-		}
-
-		bufs[n] = buf;
-		++n;
-		TAILQ_REMOVE(&rpc->msgin.packets, buf_entry, link);
-		sdtp_pool_free_packet_tailq_entry(buf_entry);
-
-		--rpc->msgin.num_bufs;
-		rpc->msgin.copied_out = segment_offset + sdtp_payload_len(buf, iphlen);
-
-		if (n < MAX_BUFS) {
-			continue;
-		}
-
-	sdtp_copy_to_user_copy:
+		n = sdtp_collect_bufs(rpc, bufs, iphlen);
 		if (n == 0) {
-			sdtp_rpc_debug(rpc, "failed to copy any buffers");
 			break;
 		}
-		atomic_set_32(&rpc->flags_atomic, RPC_COPYING_TO_USER);
-		sdtp_rpc_unlock(rpc);
 
-		for (i = 0; i < n && !error; ++i) {
-			buf = bufs[i];
-
-			KASSERT(buf->m_len >= sizeof(struct sdtp_data_header),
-			    ("buf %d (%d) must contain the size of sdtp_data_header\n",
-				n, buf->m_len));
-
-			header = SDTP_MTOD(buf, struct sdtp_data_header *, iphlen);
-			int rem = sdtp_payload_len(buf, iphlen);
-
-			if (rem < 0) {
-				error = EINVAL;
-				continue;
-			}
-
-			KASSERT(buf->m_len - sizeof(*header) - iphlen > 0,
-			    ("buf size without header must be positive\n"));
-			error = uiomove(mtod(buf, char *) + sizeof(*header) + iphlen,
-			    buf->m_len - sizeof(*header) - iphlen, uio);
-			if (error) {
-				continue;
-			}
-
-			sdtp_rpc_debug(rpc, "copying %d length to userspace",
-			    buf->m_len - sizeof(*header) - iphlen);
-
-			struct mbuf *m = buf->m_next;
-			for (; m != NULL && uio->uio_resid > 0 && rem > 0;
-			    m = m->m_next) {
-				int len = min(m->m_len, uio->uio_resid);
-				len = min(m->m_len, rem);
-
-				sdtp_rpc_debug(rpc,
-				    "copying %d length to userspace", len);
-				error = uiomove(mtod(m, char *), len, uio);
-				if (error) {
-					break;
-				}
-				rem -= len;
-			}
-
-			if (error) {
-				continue;
-			}
-			SDTP_METRIC(rpc->sdtpcb, recv_pkts_atomic, 1);
-		}
-
-		for (i = 0; i < n; ++i) {
-			// TODO: buffer should be free'd here?
-			// TODO: sdtp_handle_acks(rpc, bufs[i]);
-			sdtp_free_mbuf(bufs[i]);
-			SDTP_METRIC(rpc->sdtpcb, freed_recv_pkts_atomic, 1);
-		}
-		n = 0;
-		sdtp_rpc_lock(rpc);
-		atomic_clear_32(&rpc->flags_atomic, RPC_COPYING_TO_USER);
-		if (error) {
+		error = __sdtp_copy_to_user(uio, rpc, bufs, n, iphlen);
+		if (error != 0) {
 			break;
 		}
 	}
 
-	return error;
+	return (error);
 }
 
 static struct sdtp_rpc *
