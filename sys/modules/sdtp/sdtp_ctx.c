@@ -757,7 +757,7 @@ sdtp_ctx_decrypt(struct sdtp_rpc *rpc, int iphlen, struct sdtp_packet_tailq_entr
 	struct mbuf *m = entries[0]->data;
 	struct ktls_session *session;
 	struct tls_record_layer *header;
-	int error = 0;
+	int error = 0, seqno = rpc->crypto.seqno;
 
 	session = sdtp_ctx_get_session(rpc, false);
 	if (session == NULL) {
@@ -788,12 +788,13 @@ sdtp_ctx_decrypt(struct sdtp_rpc *rpc, int iphlen, struct sdtp_packet_tailq_entr
 		entries[i]->data = NULL;
 	}
 
-	error = ktls_ocf_decrypt(session, header, m, rpc->crypto.seqno, trailer_len);
+	error = ktls_ocf_decrypt(session, header, m, seqno, trailer_len);
 	sdtp_rpc_debug(rpc, "decryption result: %d", error);
 	if (error == 0) {
 		entries[0]->data = m;
 	}
 
 	sdtp_rpc_lock(rpc);
+	++rpc->crypto.seqno;
 	return (error);
 }
