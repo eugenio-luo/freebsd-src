@@ -15,6 +15,12 @@
 #include "sdtp_common.h"
 #include "sdtp_utils.h"
 
+#define SDTP_TLS_HEADER_OFFSET \
+	(sizeof(struct sdtp_data_header) - sizeof(struct sdtp_data_segment))
+
+#define SDTP_TLS_DATA_OFFSET \
+	(SDTP_TLS_HEADER_OFFSET + sizeof(struct tls_record_layer))
+
 struct sdtp_inpcb;
 struct sdtp_rpc;
 

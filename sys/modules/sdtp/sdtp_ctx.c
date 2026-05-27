@@ -582,8 +582,7 @@ sdtp_calc_rx_logical_info(struct sdtp_rpc *rpc, struct mbuf *m)
 	int iphlen = rpc->sdtpcb->iphlen;
 	int payload_len = sdtp_payload_len(m, iphlen);
 	int record_len, max_frame_data;
-	MBUF_LEN_AT_LEAST(m, sizeof(struct sdtp_data_header) - sizeof(struct sdtp_data_segment)
-		   + iphlen + sizeof(struct tls_record_layer));
+	MBUF_LEN_AT_LEAST(m, SDTP_TLS_DATA_OFFSET + iphlen);
 
 	struct sdtp_data_header *header = SDTP_MTOD(m, struct sdtp_data_header *, iphlen);
 	struct ip *ip_header = mtod(m, struct ip *);
