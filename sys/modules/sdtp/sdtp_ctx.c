@@ -700,3 +700,100 @@ sdtp_ctx_record_complete(struct sdtp_rpc *rpc)
 sdtp_ctx_record_complete_out:
 	return (complete);
 }
+
+static struct ktls_session *
+sdtp_ctx_get_session(struct sdtp_rpc *rpc, bool is_tx)
+{
+	VALID_RPC_ASSERT(rpc);
+	RPC_LOCK_OWNED(rpc);
+	KASSERT(rpc->crypto.ctx != NULL, ("rpc ctx must be valid"));
+
+	int direction = (is_tx) ? KTLS_TX : KTLS_RX, error;
+	struct sdtp_tls_state *state = (is_tx) ? &rpc->crypto.ctx->tx : &rpc->crypto.ctx->rx;
+	struct ktls_session *session;
+	struct tls_enable en;
+
+	KASSERT(state->active, ("state must be active"));
+
+	if (state->session == NULL) {
+		en = state->en;
+
+		sdtp_rpc_unlock(rpc);
+		error = sdtp_new_ktls(rpc->sdtpcb, &en, &session, direction);
+		sdtp_rpc_lock(rpc);
+
+		if (error != 0) {
+			return (NULL);
+		}
+
+		// we dropped the lock, so we need to check again
+		state = (is_tx) ? &rpc->crypto.ctx->tx : &rpc->crypto.ctx->rx;
+		if (state->session != NULL) {
+			ktls_free(session);
+			return (state->session);
+		}
+
+		state->session = session;
+	}
+
+	KASSERT(state->session != NULL, ("session must be valid"));
+	return (state->session);
+}
+
+/*
+ * The decrypted packet will inserted as a mbuf at entries[0]
+ *
+ */
+int
+sdtp_ctx_decrypt(struct sdtp_rpc *rpc, int iphlen, struct sdtp_packet_tailq_entry **entries, int n, int *trailer_len)
+{
+	VALID_RPC_ASSERT(rpc);
+	RPC_LOCK_OWNED(rpc);
+	KASSERT(n > 0, ("n must be positive"));
+	KASSERT(entries != NULL && *entries != NULL, ("entries must be valid"));
+	KASSERT(entries[0]->data->m_len > iphlen + SDTP_TLS_DATA_OFFSET,
+	 ("first entry must contain headers"));
+
+	struct mbuf *m = entries[0]->data;
+	struct ktls_session *session;
+	struct tls_record_layer *header;
+	int error = 0;
+
+	session = sdtp_ctx_get_session(rpc, false);
+	if (session == NULL) {
+		return (EINVAL);
+	}
+
+	sdtp_rpc_unlock(rpc);
+
+	m_adj(m, iphlen + SDTP_TLS_HEADER_OFFSET);
+	header = mtod(m, struct tls_record_layer *);
+	entries[0]->data = NULL;
+	KASSERT(header->tls_type == TLS_RLTYPE_APP, ("tls type must be correct: %d", header->tls_type));
+	KASSERT(header->tls_vmajor == TLS_MAJOR_VER_ONE, ("tls major version must be correct: %d", header->tls_vmajor));
+	KASSERT(header->tls_vminor == TLS_MINOR_VER_TWO, ("tls minor version must be correct: %d", header->tls_vminor));
+
+	sdtp_tls_header_debug(header, NULL);
+	sdtp_rpc_debug(rpc, "m: m_pkthdr.len %d", m->m_pkthdr.len);
+	sdtp_debug_rx_info(rpc, &entries[0]->rx_info);
+
+	for (int i = 1; i < n; ++i) {
+		m_adj(entries[i]->data, iphlen + SDTP_TLS_HEADER_OFFSET);
+		sdtp_rpc_debug(rpc, "entry %d: m_pkthdr.len %d", i, entries[i]->data->m_pkthdr.len);
+		sdtp_debug_rx_info(rpc, &entries[i]->rx_info);
+
+		m_catpkt(m, entries[i]->data);
+		sdtp_rpc_debug(rpc, "m: m_pkthdr.len %d", m->m_pkthdr.len);
+
+		entries[i]->data = NULL;
+	}
+
+	error = ktls_ocf_decrypt(session, header, m, rpc->crypto.seqno, trailer_len);
+	sdtp_rpc_debug(rpc, "decryption result: %d", error);
+	if (error == 0) {
+		entries[0]->data = m;
+	}
+
+	sdtp_rpc_lock(rpc);
+	return (error);
+}

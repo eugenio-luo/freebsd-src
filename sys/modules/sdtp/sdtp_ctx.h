@@ -95,6 +95,7 @@ int sdtp_ctx_enable(struct sdtp_inpcb *pcb, struct sockopt *sopt, bool is_tx);
 void sdtp_free_ctx(struct sdtp_ctx *ctx);
 struct sdtp_rx_logical_info sdtp_calc_rx_logical_info(struct sdtp_rpc *rpc, struct mbuf *m);
 bool sdtp_ctx_record_complete(struct sdtp_rpc *rpc);
+int sdtp_ctx_decrypt(struct sdtp_rpc *rpc, int iphlen, struct sdtp_packet_tailq_entry **entries, int n, int *trailer_len);
 void sdtp_debug_rx_info(struct sdtp_rpc *rpc, struct sdtp_rx_logical_info *rx_info);
 
 static inline void
