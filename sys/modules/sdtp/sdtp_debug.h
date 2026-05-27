@@ -200,6 +200,25 @@ sdtp_data_header_debug(struct sdtp_data_header *header, const char *fmt, ...)
 #endif
 }
 
+static inline void
+sdtp_tls_header_debug(struct tls_record_layer *header, const char *fmt, ...)
+{
+#ifdef SDTP_DEBUG
+	char buf[BUF_SIZE];
+	va_list args;
+	int len;
+
+	len = snprintf(buf, sizeof(buf),
+	    "TLS HEADER [type: %d, vmajor: %d, vminor: %d, length: %d]",
+	    header->tls_type, header->tls_vmajor, header->tls_vminor,
+	    ntohs(header->tls_length));
+
+	va_start(args, fmt);
+	sdtp_opt_fmt_print(&buf[0], len, fmt, args);
+	va_end(args);
+#endif
+}
+
 #define MBUF_LEN_ASSERT(M, HEADER_TYPE)                                     \
 	do {                                                                \
 		KASSERT((M)->m_len >= (int32_t)sizeof(HEADER_TYPE),         \
