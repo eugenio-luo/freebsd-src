@@ -295,11 +295,11 @@ __sdtp_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc, struct mbuf *bufs[MAX
 static int
 sdtp_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc)
 {
-	struct mbuf *bufs[MAX_BUFS];
-	int error = 0, n = 0, iphlen = rpc->sdtpcb->iphlen;
-
 	KASSERT(rpc->msgin.num_bufs > 0,
 	    ("the num of bufs should be positive: %d", rpc->msgin.num_bufs));
+
+	int error = 0, n = 0, iphlen = rpc->sdtpcb->iphlen;
+	struct mbuf *bufs[MAX_BUFS];
 
 	while (true) {
 		n = sdtp_collect_bufs(rpc, bufs, iphlen);
