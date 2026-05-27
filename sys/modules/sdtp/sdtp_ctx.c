@@ -248,6 +248,7 @@ sdtp_rpc_ctx_init(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc)
 	rpc->crypto.offset = 0;
 	rpc->crypto.max = mtu -
 	    IP_SDTP_HEADER_SIZE(rpc->sdtpcb, struct sdtp_data_header);
+	rpc->crypto.seqno = 0;
 
 	sdtp_rpc_debug(rpc, "successful ctx init");
 
