@@ -308,11 +308,11 @@ sdtp_validate_tls_enable_out:
 // TODO: improve these two functions!!!
 
 static int
-sdtp_new_ktls(struct sdtp_inpcb *pcb, struct sdtp_tls_args *sen, struct ktls_session **ktls, int direction)
+sdtp_new_ktls(struct sdtp_inpcb *pcb, struct tls_enable *en, struct ktls_session **ktls, int direction)
 {
 	int error = 0;
 
-	error = ktls_create_session(sdtp_so(pcb), &sen->tls, ktls, direction);
+	error = ktls_create_session(sdtp_so(pcb), en, ktls, direction);
 	if (error != 0) {
 		sdtp_pcb_debug(pcb, "failed to create session: %d", error);
 		return (error);
@@ -394,7 +394,7 @@ sdtp_ctx_enable(struct sdtp_inpcb *pcb, struct sockopt *sopt, bool is_tx)
 	slot = (is_tx) ? &ctx->tx : &ctx->rx;
 	if (!slot->active) {
 		sdtp_pcb_unlock(pcb);
-		error = sdtp_new_ktls(pcb, &sen, &ktls, direction);
+		error = sdtp_new_ktls(pcb, &sen.tls, &ktls, direction);
 		sdtp_pcb_lock(pcb);
 
 		if (error != 0) {
