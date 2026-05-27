@@ -393,6 +393,63 @@ sdtp_get_record_window(struct sdtp_rpc *rpc, int *rec_start, int *rec_end)
 	return (0);
 }
 
+static int
+__sdtp_ctx_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc, struct sdtp_packet_tailq_entry *entry, int trailer_len)
+{
+	KASSERT(uio != 0, ("uio must be valid"));
+	VALID_RPC_ASSERT(rpc);
+	RPC_LOCK_OWNED(rpc);
+	KASSERT(!(rpc->flags_atomic & RPC_COPYING_TO_USER), ("RPC_COPYING_TO_USER flag must be off"));
+	KASSERT(entry != NULL, ("entry must be valid"));
+	KASSERT(trailer_len >= 0, ("trailer len must not be negative: %d", trailer_len));
+
+	struct mbuf *m = entry->data;
+
+	KASSERT(m->m_flags & M_PKTHDR, ("m must be a packet header"));
+
+	struct sdtp_rx_logical_info *rx_info = &entry->rx_info;
+	int error = 0, rem;
+
+	atomic_set_32(&rpc->flags_atomic, RPC_COPYING_TO_USER);
+	sdtp_rpc_unlock(rpc);
+
+	/*
+	 * We assume the header packet to be the first packet with TLS header and nonce,
+	 * and that last packet has the trailer
+	 */
+	rem = rx_info->record_data_len;
+	KASSERT(rem > 0, ("rem must be positive"));
+	for (; m != NULL && uio->uio_resid > 0 && rem > 0; m = m->m_next) {
+		int pre_len = (m->m_flags & M_PKTHDR) ?
+			sizeof(struct tls_record_layer) + sizeof(uint64_t) : 0;
+		int post_len = (m->m_next == NULL) ? trailer_len : 0;
+
+		int len = min(m->m_len - pre_len - post_len, uio->uio_resid);
+		len = min(len, rem);
+		error = uiomove(SDTP_MTOD(m, char *, pre_len), len, uio);
+		if (error) {
+			goto __sdtp_ctx_copy_to_user_out;
+		}
+		sdtp_rpc_debug(rpc, "copying %d length to userspace", len);
+		rem -= len;
+	}
+
+	KASSERT(uio->uio_resid == 0 || rem == 0, ("uio_resid (%zd) or rem (%d) must be 0",
+		uio->uio_resid, rem));
+	// SDTP_METRIC(rpc->sdtpcb, recv_pkts_atomic, 1);
+
+__sdtp_ctx_copy_to_user_out:
+	// TODO: buffer should be free'd here?
+	// TODO: sdtp_handle_acks(rpc, bufs[i]);
+	sdtp_free_mbuf(m);
+	// SDTP_METRIC(rpc->sdtpcb, freed_recv_pkts_atomic, 1);
+
+	sdtp_rpc_lock(rpc);
+	atomic_clear_32(&rpc->flags_atomic, RPC_COPYING_TO_USER);
+
+	return (error);
+}
+
 static void
 sdtp_free_entries(struct sdtp_packet_tailq_entry *entries[MAX_BUFS], int n)
 {
@@ -432,7 +489,11 @@ sdtp_ctx_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc)
 		}
 		KASSERT(trailer_len >= 0, ("trailer len must be not negative: %d", trailer_len));
 
-		// error = __sdtp_ctx_copy_to_user();
+		error = __sdtp_ctx_copy_to_user(uio, rpc, entries[0], trailer_len);
+		if (error != 0) {
+			sdtp_rpc_debug(rpc, "failed copy to user");
+			break;
+		}
 
 		sdtp_free_entries(entries, n);
 		n = 0;
