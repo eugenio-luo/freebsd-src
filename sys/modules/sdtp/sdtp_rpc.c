@@ -468,28 +468,39 @@ sdtp_add_packet(struct mbuf *m, struct sdtp_rpc *rpc,
 	KASSERT(iphlen > 0, ("iphlen must be positive"));
 
 	struct sdtp_packet_tailq_entry *packet, *new;
-	int offset = ntohl(header->data_segment.offset_be);
-	int data_bytes = sdtp_payload_len(m, iphlen);
+	struct sdtp_rx_logical_info rx_info;
+	int offset, data_bytes;
 	int floor = rpc->msgin.copied_out;
 	int ceiling = rpc->msgin.total_length;
 
+	if (is_encrypted_rpc(rpc)) {
+		rx_info = sdtp_calc_rx_logical_info(rpc, m);
+		offset = rx_info.start;
+		data_bytes = rx_info.length;
+	} else {
+		offset = ntohl(header->data_segment.offset_be);
+		data_bytes = sdtp_payload_len(m, iphlen);
+	}
 	sdtp_data_header_debug(header, "size: %d", data_bytes);
 	KASSERT(data_bytes > 0, ("data_bytes must be positive"));
-
-	if (is_encrypted_rpc(rpc)) {
-		struct sdtp_rx_logical_info info =
-			sdtp_calc_rx_logical_info(rpc, m);
-	}
 
 	TAILQ_FOREACH_REVERSE(packet, &rpc->msgin.packets, sdtp_packet_tailq,
 	    link) {
 		KASSERT(packet->data->m_flags & M_PKTHDR,
 		    ("packet must be a header mbuf"));
 
-		struct sdtp_data_header *h = SDTP_MTOD(packet->data,
-		    struct sdtp_data_header *, iphlen);
-		int tmp_off = ntohl(h->data_segment.offset_be);
-		int tmp_dbytes = sdtp_payload_len(packet->data, iphlen);
+		int tmp_off, tmp_dbytes;
+
+		if (is_encrypted_rpc(rpc)) {
+			struct sdtp_rx_logical_info *ri = &packet->rx_info;
+			tmp_off = ri->start;
+			tmp_dbytes = ri->length;
+		} else {
+			struct sdtp_data_header *h = SDTP_MTOD(packet->data,
+				struct sdtp_data_header *, iphlen);
+			tmp_off = ntohl(h->data_segment.offset_be);
+			tmp_dbytes = sdtp_payload_len(packet->data, iphlen);
+		}
 
 		KASSERT(tmp_dbytes > 0, ("tmp_dbytes must be positive"));
 
@@ -511,6 +522,7 @@ sdtp_add_packet(struct mbuf *m, struct sdtp_rpc *rpc,
 
 	new = sdtp_pool_alloc_packet_tailq_entry();
 	new->data = m;
+	new->rx_info = rx_info;
 
 	if (packet) {
 		TAILQ_INSERT_AFTER(&rpc->msgin.packets, packet, new, link);
