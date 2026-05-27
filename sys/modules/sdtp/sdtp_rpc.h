@@ -39,6 +39,7 @@ struct sdtp_packet_tailq_entry {
 	 * sdtp_data_header next.
 	 */
 	struct mbuf *data;
+	struct sdtp_rx_logical_info rx_info;
 
 	TAILQ_ENTRY(sdtp_packet_tailq_entry) link;
 };
