@@ -790,7 +790,9 @@ sdtp_ctx_decrypt(struct sdtp_rpc *rpc, int iphlen, struct sdtp_packet_tailq_entr
 
 	error = ktls_ocf_decrypt(session, header, m, seqno, trailer_len);
 	sdtp_rpc_debug(rpc, "decryption result: %d", error);
-	if (error == 0) {
+	if (error != 0) {
+		sdtp_free_mbuf(m);
+	} else {
 		entries[0]->data = m;
 	}
 
