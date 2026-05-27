@@ -527,7 +527,7 @@ sdtp_add_packet(struct mbuf *m, struct sdtp_rpc *rpc,
 	if (packet) {
 		TAILQ_INSERT_AFTER(&rpc->msgin.packets, packet, new, link);
 	} else {
-		TAILQ_INSERT_HEAD(&rpc->msgin.packets, new, link);
+		TAILQ_INSERT_TAIL(&rpc->msgin.packets, new, link);
 	}
 
 	rpc->msgin.bytes_remaining -= data_bytes;
