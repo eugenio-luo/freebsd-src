@@ -572,6 +572,14 @@ sdtp_trailer_only(struct sdtp_rpc *rpc, int data_bytes, uint16_t ip_id)
 	return (data_bytes <= sdtp_post_len(rpc));
 }
 
+void
+sdtp_debug_rx_info(struct sdtp_rpc *rpc, struct sdtp_rx_logical_info *info)
+{
+	sdtp_rpc_debug(rpc, "start: %d, length: %d, end: %d, trailer_only: %d, record_data_offset: %d, record_data_len: %d",
+		info->start, info->length, info->end, info->trailer_only,
+		info->record_data_offset, info->record_data_len);
+}
+
 struct sdtp_rx_logical_info
 sdtp_calc_rx_logical_info(struct sdtp_rpc *rpc, struct mbuf *m)
 {
@@ -623,12 +631,12 @@ sdtp_calc_rx_logical_info(struct sdtp_rpc *rpc, struct mbuf *m)
 		* sizeof(struct sdtp_data_segment);
 	info.record_data_len -= sdtp_pre_len(rpc);
 
-	sdtp_rpc_debug(rpc, "start: %d, length: %d, end: %d, trailer_only: %d, record_data_offset: %d, record_data_len: %d",
-		info.start, info.length, info.end, info.trailer_only, info.record_data_offset, info.record_data_len);
+	sdtp_debug_rx_info(rpc, &info);
 	return info;
 
 sdtp_calc_rx_logical_info_out:
 	info.record_data_offset = -1;
 	info.record_data_len = -1;
+	sdtp_debug_rx_info(rpc, &info);
 	return info;
 }
