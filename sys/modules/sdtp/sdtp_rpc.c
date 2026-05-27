@@ -601,6 +601,18 @@ sdtp_prepare_rpc_for_data(struct sdtp_rpc *rpc, struct sdtp_data_header *header)
 	return true;
 }
 
+static void
+sdtp_debug_msgin_packets(struct sdtp_rpc *rpc)
+{
+	struct sdtp_packet_tailq_entry *entry;
+	if (is_encrypted_rpc(rpc)) {
+		TAILQ_FOREACH(entry, &rpc->msgin.packets, link) {
+			struct sdtp_rx_logical_info *rx_info = &entry->rx_info;
+			sdtp_debug_rx_info(rpc, rx_info);
+		}
+	}
+}
+
 static bool
 sdtp_data_packet(struct sdtp *sdtp, struct mbuf *m, struct sdtp_rpc *rpc,
     struct sdtp_inpcb *pcb, struct in6_addr *source)
@@ -627,6 +639,8 @@ sdtp_data_packet(struct sdtp *sdtp, struct mbuf *m, struct sdtp_rpc *rpc,
 	if (!sdtp_add_packet(m, rpc, header, pcb->iphlen)) {
 		goto sdtp_data_packet_error;
 	}
+
+	sdtp_debug_msgin_packets(rpc);
 
 	if (!TAILQ_EMPTY(&rpc->msgin.packets) &&
 		(!(atomic_load_32(&rpc->flags_atomic) & RPC_PKTS_READY))) {
