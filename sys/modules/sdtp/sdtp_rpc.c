@@ -658,8 +658,8 @@ sdtp_data_packet(struct sdtp *sdtp, struct mbuf *m, struct sdtp_rpc *rpc,
 		(!(atomic_load_32(&rpc->flags_atomic) & RPC_PKTS_READY))) {
 
 		if (!is_encrypted_rpc(rpc)
-		//  || sdtp_record_complete(rpc)) {
-		) {
+		    || sdtp_ctx_record_complete(rpc)) {
+
 			atomic_set_32(&rpc->flags_atomic, RPC_PKTS_READY);
 			sdtp_pcb_lock(pcb);
 			sdtp_handoff_rpc(pcb, rpc);

@@ -640,3 +640,63 @@ sdtp_calc_rx_logical_info_out:
 	sdtp_debug_rx_info(rpc, &info);
 	return info;
 }
+
+bool
+sdtp_ctx_record_complete(struct sdtp_rpc *rpc)
+{
+	VALID_RPC_ASSERT(rpc);
+	RPC_LOCK_OWNED(rpc);
+	KASSERT(!TAILQ_EMPTY(&rpc->msgin.packets), ("rpc msgin packets must not be empty"));
+
+	struct sdtp_packet_tailq_entry *entry;
+	struct sdtp_rx_logical_info *rx_info;
+	int data_end, prev_end;
+	bool complete = false;
+
+	entry = TAILQ_FIRST(&rpc->msgin.packets);
+	KASSERT(entry != NULL, ("entry must be valid"));
+
+	rx_info = &entry->rx_info;
+
+	if (rx_info->record_data_offset == -1
+	    || rx_info->record_data_offset != rpc->crypto.offset) {
+
+		sdtp_rpc_debug(rpc, "%s: rx info incorrect: record_data_offset: %d, rpc offset: %d",
+			__func__, rx_info->record_data_offset, rpc->crypto.offset);
+		goto sdtp_ctx_record_complete_out;
+	}
+
+	entry = TAILQ_NEXT(entry, link);
+	data_end = rx_info->record_data_offset + rx_info->record_data_len;
+	prev_end = rx_info->end;
+	if (entry != NULL) {
+		TAILQ_FOREACH_FROM(entry, &rpc->msgin.packets, link) {
+			if (prev_end >= data_end) {
+				break;
+			}
+
+			rx_info = &entry->rx_info;
+			if (prev_end < rx_info->start) {
+				sdtp_rpc_debug(rpc, "%s: prev end: %d, rx info start: %d",
+					__func__, prev_end, rx_info->start);
+				goto sdtp_ctx_record_complete_out;
+			}
+
+			KASSERT(rx_info->end > prev_end,
+				("next end (%d) must be more than prev one (%d)",
+				 rx_info->end, prev_end));
+			prev_end = rx_info->end;
+		}
+	}
+
+	if (prev_end < data_end) {
+		sdtp_rpc_debug(rpc, "%s: prev end: %d, data end: %d",
+			__func__, prev_end, data_end);
+		goto sdtp_ctx_record_complete_out;
+	}
+
+	complete = true;
+
+sdtp_ctx_record_complete_out:
+	return (complete);
+}
