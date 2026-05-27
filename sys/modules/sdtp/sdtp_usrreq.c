@@ -482,6 +482,9 @@ sdtp_ctx_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc)
 			break;
 		}
 
+		for (int i = 0; i < n; ++i) {
+			sdtp_debug_mbuf(rpc, entries[i]->data);
+		}
 		error = sdtp_ctx_decrypt(rpc, iphlen, entries, n, &trailer_len);
 		if (error != 0) {
 			sdtp_rpc_debug(rpc, "failed decryption");
@@ -490,6 +493,7 @@ sdtp_ctx_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc)
 		KASSERT(trailer_len >= 0, ("trailer len must be not negative: %d", trailer_len));
 
 		error = __sdtp_ctx_copy_to_user(uio, rpc, entries[0], trailer_len);
+		sdtp_debug_mbuf(rpc, entries[0]->data);
 		if (error != 0) {
 			sdtp_rpc_debug(rpc, "failed copy to user");
 			break;

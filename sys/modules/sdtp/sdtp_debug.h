@@ -330,4 +330,20 @@ sdtp_debug_print_pcb_rpcs(struct sdtp_inpcb *pcb, struct sdtp_rpc *owned_rpc)
 #endif
 }
 
+static inline void
+sdtp_debug_mbuf(struct sdtp_rpc *rpc, struct mbuf *m)
+{
+#ifdef SDTP_DEBUG
+	for (int i = 0; m != NULL; ++i, m = m->m_next) {
+		sdtp_rpc_debug(rpc, "mbuf %d: m_len: %d, m_pkthdr: %d", i, m->m_len, m->m_flags & M_PKTHDR);
+		/*
+		for (int j = 0; j < m->m_len; ++j) {
+			sdtp_debug("%02x", *SDTP_MTOD(m, uint8_t *, j));
+		}
+		sdtp_debug("\n");
+		*/
+	}
+#endif
+}
+
 #endif
