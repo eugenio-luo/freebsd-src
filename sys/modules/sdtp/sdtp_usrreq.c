@@ -316,6 +316,126 @@ sdtp_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc)
 	return (error);
 }
 
+static int
+sdtp_get_record_entries(struct sdtp_rpc *rpc, struct sdtp_packet_tailq_entry *entries[MAX_BUFS],
+		     int rec_start, int rec_len)
+{
+	VALID_RPC_ASSERT(rpc);
+	RPC_LOCK_OWNED(rpc);
+	KASSERT(rec_start >= 0, ("rec_start must not be negative: %d", rec_start));
+	KASSERT(rec_len > 0, ("rec_len must be positive: %d", rec_len));
+
+	struct sdtp_packet_tailq_entry *entry;
+	struct sdtp_rx_logical_info *rx_info;
+	int n = 0, seg_end = rec_start;
+
+	TAILQ_FOREACH(entry, &rpc->msgin.packets, link) {
+		rx_info = &entry->rx_info;
+
+		if (rx_info->start != seg_end) {
+			sdtp_rpc_debug(rpc, "rx_info->start: %d, seg_end: %d",
+				rx_info->start, seg_end);
+			break;
+		}
+		++n;
+		seg_end = rx_info->end;
+		if (seg_end - rec_start >= rec_len) {
+			break;
+		}
+	}
+
+	if (seg_end - rec_start < rec_len) {
+		sdtp_rpc_debug(rpc, "seg_len: %d, rec_len: %d",
+			seg_end - rec_start, rec_len);
+		return (0);
+	}
+	if (n > MAX_BUFS) {
+		return (-EINVAL);
+	}
+
+	for (int i = 0; i < n; ++i) {
+		entries[i] = TAILQ_FIRST(&rpc->msgin.packets);
+		TAILQ_REMOVE(&rpc->msgin.packets, entries[i], link);
+	}
+	rpc->msgin.copied_out = rec_start + rec_len;
+
+	return (n);
+}
+
+static int
+sdtp_get_record_window(struct sdtp_rpc *rpc, int *rec_start, int *rec_end)
+{
+	VALID_RPC_ASSERT(rpc);
+	RPC_LOCK_OWNED(rpc);
+
+	struct sdtp_packet_tailq_entry *entry;
+	struct sdtp_rx_logical_info *rx_info;
+
+	entry = TAILQ_FIRST(&rpc->msgin.packets);
+	if (entry == NULL) {
+		sdtp_rpc_debug(rpc, "failed to get entry");
+		return (-1);
+	}
+
+	rx_info = &entry->rx_info;
+	sdtp_debug_rx_info(rpc, rx_info);
+
+	if (rx_info->record_data_offset == -1
+	    || rx_info->record_data_offset > rpc->crypto.offset) {
+
+		sdtp_rpc_debug(rpc, "%s: rx info incorrect: record_data_offset: %d, rpc offset: %d",
+			__func__, rx_info->record_data_offset, rpc->crypto.offset);
+		return (-1);
+	}
+
+	*rec_start = rx_info->record_data_offset;
+	*rec_end = rx_info->record_data_len;
+	return (0);
+}
+
+static void
+sdtp_free_entries(struct sdtp_packet_tailq_entry *entries[MAX_BUFS], int n)
+{
+	for (int i = 0; i < n; ++i) {
+		sdtp_pool_free_packet_tailq_entry(entries[i]);
+	}
+}
+
+static int
+sdtp_ctx_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc)
+{
+	KASSERT(rpc->msgin.num_bufs > 0,
+	    ("the num of bufs should be positive: %d", rpc->msgin.num_bufs));
+
+	int error = 0, iphlen = rpc->sdtpcb->iphlen, rec_start = -1, rec_len = -1, n = 0;
+	int trailer_len = -1;
+	struct sdtp_packet_tailq_entry *entries[MAX_BUFS];
+
+	while (true) {
+		if (sdtp_get_record_window(rpc, &rec_start, &rec_len)) {
+			sdtp_rpc_debug(rpc, "failed to get window");
+			break;
+		}
+
+		n = sdtp_get_record_entries(rpc, entries, rec_start, rec_len);
+		if (n <= 0) {
+			error = -n;
+			n = 0;
+			sdtp_rpc_debug(rpc, "failed to get records: %d", error);
+			break;
+		}
+
+		// error = sdtp_ctx_decrypt();
+		// error = __sdtp_ctx_copy_to_user();
+
+		sdtp_free_entries(entries, n);
+		n = 0;
+	}
+
+	sdtp_free_entries(entries, n);
+	return (error);
+}
+
 static struct sdtp_rpc *
 sdtp_wait_for_message(struct sdtp_inpcb *pcb, int flags, uint64_t id,
     struct uio *uio, int *error)
@@ -426,14 +546,10 @@ sdtp_wait_for_message(struct sdtp_inpcb *pcb, int flags, uint64_t id,
 			}
 
 			if (rpc->error == 0 && rpc->msgin.num_bufs > 0) {
-				if (is_encrypted_rpc(rpc)) {
-					(void)rpc->crypto.ctx;
-					// TODO: homals_copy_to_user
-				} else {
-					sdtp_pcb_debug(pcb, "copy to user");
-					rpc->error = sdtp_copy_to_user(uio,
-					    rpc);
-				}
+				sdtp_pcb_debug(pcb, "copy to user");
+				rpc->error = (is_encrypted_rpc(rpc))
+					? sdtp_ctx_copy_to_user(uio, rpc)
+					: sdtp_copy_to_user(uio, rpc);
 			}
 			if (rpc->error != 0) {
 				goto sdtp_wait_for_message_done;
