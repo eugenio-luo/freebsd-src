@@ -202,6 +202,61 @@ struct packet_mbuf_result {
 	int result;
 };
 
+static int
+sdtp_uio_to_mbuf(struct sdtp_rpc *rpc, struct mbuf **mp, struct uio *uio, int m_size, int header_len)
+{
+	struct mchain mc;
+	struct mbuf *m;
+	int error;
+
+	error = mc_uiotomc(&mc, uio, m_size - header_len, header_len, M_NOWAIT, M_PKTHDR);
+	if (error != 0) {
+		return (error);
+	}
+
+	m = mc_first(&mc);
+	KASSERT(m != NULL, ("m must be valid"));
+
+	m->m_pkthdr.len = mc.mc_len;
+	m->m_pkthdr.memlen = mc.mc_mlen;
+
+	m->m_data -= header_len;
+	m->m_len += header_len;
+	m->m_pkthdr.len += header_len;
+
+	*mp = m;
+	return (0);
+}
+
+static void
+sdtp_fill_data_header(struct sdtp_rpc *rpc, struct mbuf *m, int offset)
+{
+	struct sdtp_data_header *header;
+
+	header = SDTP_MTOD(m, struct sdtp_data_header *, rpc->sdtpcb->iphlen);
+
+	header->common.sport_be = htons(rpc->sdtpcb->port);
+	header->common.dport_be = htons(rpc->dport);
+	SDTP_SET_DOFF(header);
+	header->common.type = SDTP_DATA;
+	header->common.sender_id_be = htobe64(rpc->id);
+	header->message_length_be = htonl(rpc->msgout.length);
+	// I'm not sure if this is correct?
+	header->incoming_be = htonl(rpc->msgout.length);
+	header->cutoff_version_be = rpc->peer->cutoff_version_be;
+	header->retransmit = 0;
+
+	if (is_encrypted_rpc(rpc)) {
+		header->padding[0] = (offset >> 16) & 0xFF;
+		header->padding[1] = (offset >> 8) & 0xFF;
+		header->padding[2] = offset & 0xFF;
+	}
+
+	header->data_segment.offset_be = ntohl(offset);
+	header->ack.client_id_be = htobe64(rpc->id ^ 1);
+	header->ack.server_port_be = htons(rpc->dport);
+}
+
 /*
  * m_size represents maximum size of packet INCLUDING header
  */
@@ -221,77 +276,21 @@ sdtp_create_packet_mbuf(struct sdtp_rpc *rpc, struct uio *uio, int m_size,
 	KASSERT(uio != NULL, ("uio must be valid"));
 	KASSERT(uio->uio_resid > 0, ("uio resid must be positive"));
 
-	struct packet_mbuf_result res;
-	struct mbuf *m, *tmp;
-	int remaining,
-	    header_len = IP_SDTP_HEADER_SIZE(rpc->sdtpcb,
-		struct sdtp_data_header);
+	struct mbuf *m;
+	struct packet_mbuf_result res = {0};
+	int error = 0;
+	int header_len = IP_SDTP_HEADER_SIZE(rpc->sdtpcb, struct sdtp_data_header);
 
-	res.buf = NULL;
-	res.result = -EINVAL;
-
-	m = m_gethdr(M_NOWAIT, MT_DATA);
-	if (!m) {
-		sdtp_rpc_debug(rpc, "no header packet left in mbufs zone");
-		res.result = -ENOMEM;
+	error = sdtp_uio_to_mbuf(rpc, &m, uio, m_size, header_len);
+	if (error != 0) {
+		res.result = -error;
 		goto sdtp_create_packet_mbuf_error;
 	}
-	memset(mtod(m, char *), 0, MHLEN);
 
-	for (remaining = m_size - header_len, tmp = m;
-	    remaining > 0 && uio->uio_resid > 0; tmp = tmp->m_next) {
-		// struct sdtp_data_segment *data_segment;
-		char *datap = NULL;
-		int len = min(min(uio->uio_resid, remaining), MLEN);
-
-		KASSERT(len > 0, ("len must be positive"));
-		KASSERT(len <= MLEN, ("len must be less than MLEN"));
-
-		tmp->m_next = m_get(M_NOWAIT, MT_DATA);
-		if (!tmp->m_next) {
-			sdtp_rpc_debug(rpc, "no packet lef in mbufs zone");
-			res.result = -ENOMEM;
-			goto sdtp_create_packet_mbuf_error;
-		}
-
-		datap = mtod(tmp->m_next, char *);
-		// data_segment = mtod(tmp->m_next, struct sdtp_data_segment *);
-		// data_segment->offset_be = ntohl(m_size - remaining); //
-		// placeholder data_segment->segment_length_be = ntohl(len); //
-		// placeholder data_segment->ack
-		uiomove(datap, len, uio);
-		tmp->m_next->m_len = len;
-
-		remaining -= len;
-		KASSERT(remaining >= 0,
-		    ("remaining must be always positive or 0"));
-		KASSERT(uio->uio_resid >= 0,
-		    ("uio_resid must be always positive or 0"));
-	}
-
-	m->m_pkthdr.len = m_size - remaining;
-	m->m_len = header_len;
-
-	struct sdtp_data_header *header =
-	    (struct sdtp_data_header *)(mtod(m, char *) +
-		rpc->sdtpcb->iphlen);
-	header->common.sport_be = htons(rpc->sdtpcb->port);
-	header->common.dport_be = htons(rpc->dport);
-	SDTP_SET_DOFF(header);
-	header->common.type = SDTP_DATA;
-	header->common.sender_id_be = htobe64(rpc->id);
-	header->message_length_be = htonl(rpc->msgout.length);
-	// I'm not sure if this is correct?
-	header->incoming_be = htonl(rpc->msgout.length);
-	header->cutoff_version_be = rpc->peer->cutoff_version_be;
-	header->retransmit = 0;
-
-	header->data_segment.offset_be = ntohl(offset);
-	header->ack.client_id_be = htobe64(rpc->id ^ 1);
-	header->ack.server_port_be = htons(rpc->dport);
+	sdtp_fill_data_header(rpc, m, offset);
 
 	res.buf = m;
-	res.result = m_size - header_len - remaining;
+	res.result = m->m_pkthdr.len - header_len;
 
 	KASSERT(m->m_pkthdr.len > 0,
 	    ("mbuf chain total length should be positive"));
@@ -299,7 +298,7 @@ sdtp_create_packet_mbuf(struct sdtp_rpc *rpc, struct uio *uio, int m_size,
 	KASSERT(res.result > 0, ("res result must be positive"));
 
 	sdtp_rpc_debug(rpc, "offset: %d, length: %d",
-	    ntohl(header->data_segment.offset_be), res.result);
+	    offset, res.result);
 
 	return res;
 
