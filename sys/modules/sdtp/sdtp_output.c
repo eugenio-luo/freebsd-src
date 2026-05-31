@@ -361,8 +361,6 @@ sdtp_fill_packets_slist(struct sdtp_rpc *rpc, struct uio *uio,
 			goto sdtp_fill_packets_slist_error;
 		}
 		entry->data = res.buf;
-		KASSERT(!(entry->data->m_flags & M_EXT),
-		    ("buf must not have external storage"));
 		KASSERT(entry->data->m_pkthdr.len <= max_packet_size +
 			    IP_SDTP_HEADER_SIZE(rpc->sdtpcb,
 				struct sdtp_data_header),
@@ -404,9 +402,6 @@ sdtp_send_data(struct sdtp_rpc *rpc, struct mbuf *buf, int priority)
 
 	KASSERT(buf != 0, ("buf must be valid"));
 	KASSERT(buf->m_flags & M_PKTHDR, ("buf must have packet header"));
-	// m_dup causes the M_EXT, it should be fine!
-	// KASSERT(!(buf->m_flags & M_EXT), ("buf must not have external
-	// storage"));
 	KASSERT(buf->m_pkthdr.len >=
 		IP_SDTP_HEADER_SIZE(rpc->sdtpcb, struct sdtp_data_header),
 	    ("buf must at least contain sdtp_data_header and ip header"));
@@ -499,8 +494,6 @@ sdtp_send_next_data(struct sdtp_rpc *rpc, bool force)
 
 		KASSERT(buf->m_flags & M_PKTHDR,
 		    ("First packet buf need to contain a header"));
-		KASSERT(!(buf->m_flags & M_EXT),
-		    ("buf must not have external storage"));
 		sdtp_rpc_debug(rpc, "packet length: %d", buf->m_pkthdr.len);
 
 #ifdef SDTP_TEST
