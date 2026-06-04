@@ -314,7 +314,7 @@ sdtp_create_packet_mbuf_error:
 }
 
 static int
-sdtp_fill_packets_slist(struct sdtp_rpc *rpc, struct uio *uio,
+sdtp_fill_packets(struct sdtp_rpc *rpc, struct uio *uio,
     int max_packet_size)
 {
 	VALID_RPC_ASSERT(rpc);
@@ -322,6 +322,8 @@ sdtp_fill_packets_slist(struct sdtp_rpc *rpc, struct uio *uio,
 
 	KASSERT(uio != NULL, ("uio must be valid"));
 	KASSERT(uio->uio_resid > 0, ("uio resid must be positive"));
+
+	KASSERT(max_packet_size > 0, ("max_packet_size must be positive: %d", max_packet_size));
 
 	int bytes_left, offset = 0, error = 0;
 	struct sdtp_packet_slist_entry *prev = NULL;
@@ -334,8 +336,7 @@ sdtp_fill_packets_slist(struct sdtp_rpc *rpc, struct uio *uio,
 		struct sdtp_packet_slist_entry *entry;
 		int packet_size, m_size;
 
-		packet_size = (bytes_left > max_packet_size) ? max_packet_size :
-							       bytes_left;
+		packet_size = min(bytes_left, max_packet_size);
 		m_size = IP_SDTP_HEADER_SIZE(rpc->sdtpcb,
 			     struct sdtp_data_header) +
 		    packet_size;
@@ -598,7 +599,7 @@ sdtp_message_out(struct sdtp_rpc *rpc, struct uio *uio, bool immediate_send)
 	// overlap_xmit = rpc->msgout.length > 2 * max_packet_size;
 	atomic_set_32(&rpc->flags_atomic, RPC_COPYING_FROM_USER);
 
-	error = sdtp_fill_packets_slist(rpc, uio, max_packet_size);
+	error = sdtp_fill_packets(rpc, uio, max_packet_size);
 	if (error) {
 		goto sdtp_message_out_error;
 	}
