@@ -70,7 +70,8 @@ struct sdtp_ctx {
 struct sdtp_rpc_crypto {
 	struct sdtp_ctx *ctx;
 
-	uint64_t seqno;
+	uint64_t tx_seqno;
+	uint64_t rx_seqno;
 	unsigned int max;
 	int offset;
 };

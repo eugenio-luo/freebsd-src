@@ -248,7 +248,8 @@ sdtp_rpc_ctx_init(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc)
 	rpc->crypto.offset = 0;
 	rpc->crypto.max = mtu -
 	    IP_SDTP_HEADER_SIZE(rpc->sdtpcb, struct sdtp_data_header);
-	rpc->crypto.seqno = 0;
+	rpc->crypto.tx_seqno = 0;
+	rpc->crypto.rx_seqno = 0;
 
 	sdtp_rpc_debug(rpc, "successful ctx init");
 
@@ -757,7 +758,7 @@ sdtp_ctx_decrypt(struct sdtp_rpc *rpc, int iphlen, struct sdtp_packet_tailq_entr
 	struct mbuf *m = entries[0]->data;
 	struct ktls_session *session;
 	struct tls_record_layer *header;
-	int error = 0, seqno = rpc->crypto.seqno;
+	int error = 0, seqno = rpc->crypto.rx_seqno;
 
 	session = sdtp_ctx_get_session(rpc, false);
 	if (session == NULL) {
@@ -797,6 +798,6 @@ sdtp_ctx_decrypt(struct sdtp_rpc *rpc, int iphlen, struct sdtp_packet_tailq_entr
 	}
 
 	sdtp_rpc_lock(rpc);
-	++rpc->crypto.seqno;
+	++rpc->crypto.rx_seqno;
 	return (error);
 }
