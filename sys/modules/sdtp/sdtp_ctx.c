@@ -496,7 +496,7 @@ sdtp_pre_len(struct sdtp_rpc *rpc)
 		 en->tls_vminor));
 
 	int len = sizeof(struct tls_record_layer) + sizeof(uint64_t);
-	KASSERT(len > 0, ("%s: len must be positive: %d", __func__, len));
+	MUST_POSITIVE(len);
 	return (len);
 }
 
@@ -522,7 +522,7 @@ sdtp_post_len(struct sdtp_rpc *rpc)
 		("tls minor version must be 2"));
 
 	int len = AES_GMAC_HASH_LEN;
-	KASSERT(len > 0, ("%s: len must be positive: %d", __func__, len));
+	MUST_POSITIVE(len);
 	return (len);
 }
 
@@ -538,7 +538,7 @@ sdtp_logical_offset(struct sdtp_rpc *rpc, uint16_t ip_id, uint32_t gso_offset)
 		offset -= extra_len;
 	}
 
-	KASSERT(offset >= 0, ("offset must be not negative: %d", offset));
+	MUST_NOT_NEGATIVE(offset);
 	return (offset);
 }
 
@@ -554,7 +554,7 @@ sdtp_logical_data_bytes(struct sdtp_rpc *rpc, struct mbuf *m, int iphlen, uint16
 	if (ip_id == 0) {
 		len -= extra_len;
 	}
-	KASSERT(len > 0, ("%s: len must be positive: %d", __func__, len));
+	MUST_POSITIVE(len);
 
 	if (len + sizeof(struct sdtp_data_segment) > post_len) {
 		return len;
@@ -751,7 +751,7 @@ sdtp_ctx_decrypt(struct sdtp_rpc *rpc, int iphlen, struct sdtp_packet_tailq_entr
 {
 	VALID_RPC_ASSERT(rpc);
 	RPC_LOCK_OWNED(rpc);
-	KASSERT(n > 0, ("n must be positive"));
+	MUST_POSITIVE(n);
 	KASSERT(entries != NULL && *entries != NULL, ("entries must be valid"));
 	KASSERT(entries[0]->data->m_len > iphlen + SDTP_TLS_DATA_OFFSET,
 	 ("first entry must contain headers"));
@@ -937,9 +937,9 @@ sdtp_tls_fill_packets(struct sdtp_rpc *rpc, struct uio *uio, int max_packet_size
 	KASSERT(rpc->crypto.ctx != NULL, ("rpc ctx must be valid"));
 
 	KASSERT(uio != NULL, ("uio must be valid"));
-	KASSERT(uio->uio_resid > 0, ("uio resid must be positive"));
+	MUST_POSITIVE(uio->uio_resid);
 
-	KASSERT(max_packet_size > 0, ("max_packet_size must be positive: %d", max_packet_size));
+	MUST_POSITIVE(max_packet_size);
 
 	if (max_packet_size > MJUMPAGESIZE) {
 		return (EMSGSIZE);

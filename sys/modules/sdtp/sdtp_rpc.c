@@ -381,7 +381,7 @@ sdtp_new_server_rpc(struct sdtp_data_header *header,
 		    struct sdtp_inpcb *pcb, struct in6_addr *source, int payload_size)
 {
 	VALID_PCB_ASSERT(pcb);
-	KASSERT(payload_size > 0, ("payload_size must be positive: %d", payload_size));
+	MUST_POSITIVE(payload_size);
 
 	struct sdtp_rpc *rpc;
 	int error = 0;
@@ -465,7 +465,7 @@ sdtp_add_packet(struct mbuf *m, struct sdtp_rpc *rpc,
 	VALID_RPC_ASSERT(rpc);
 	RPC_LOCK_OWNED(rpc);
 	KASSERT(header != NULL, ("header must be valid"));
-	KASSERT(iphlen > 0, ("iphlen must be positive"));
+	MUST_POSITIVE(iphlen);
 
 	struct sdtp_packet_tailq_entry *packet, *new;
 	struct sdtp_rx_logical_info rx_info;
@@ -482,7 +482,7 @@ sdtp_add_packet(struct mbuf *m, struct sdtp_rpc *rpc,
 		data_bytes = sdtp_payload_len(m, iphlen);
 	}
 	sdtp_data_header_debug(header, "size: %d", data_bytes);
-	KASSERT(data_bytes > 0, ("data_bytes must be positive"));
+	MUST_POSITIVE(data_bytes);
 
 	TAILQ_FOREACH_REVERSE(packet, &rpc->msgin.packets, sdtp_packet_tailq,
 	    link) {
@@ -502,7 +502,7 @@ sdtp_add_packet(struct mbuf *m, struct sdtp_rpc *rpc,
 			tmp_dbytes = sdtp_payload_len(packet->data, iphlen);
 		}
 
-		KASSERT(tmp_dbytes > 0, ("tmp_dbytes must be positive"));
+		MUST_POSITIVE(tmp_dbytes);
 
 		if (tmp_off < offset) {
 			floor = tmp_off + tmp_dbytes;
@@ -831,7 +831,7 @@ sdtp_get_rpc(struct sdtp_inpcb *pcb, struct sdtp_common_header *header,
 
 	if (!is_client && header->type == SDTP_DATA) {
 		/* We are the RPC server and it's a DATA packet */
-		KASSERT(payload_size > 0, ("payload_size must be positive: %d", payload_size));
+		MUST_POSITIVE(payload_size);
 
 		expected_rpc = sdtp_new_server_rpc((struct sdtp_data_header *) header,
 				     pcb, source, payload_size);

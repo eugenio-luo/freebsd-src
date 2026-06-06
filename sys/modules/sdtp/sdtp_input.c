@@ -91,7 +91,7 @@ sdtp_parse_header_and_src_addr(struct mbuf *m, int iphlen,
 	KASSERT(m != NULL, ("m must be valid"));
 	KASSERT(sdtp_header != NULL, ("sdtp_header must be valid"));
 	KASSERT(addr != NULL, ("addr must be valid"));
-	KASSERT(iphlen > 0, ("iphlen must be positive"));
+	MUST_POSITIVE(iphlen);
 
 	struct ip *ip_header = mtod(m, struct ip *);
 

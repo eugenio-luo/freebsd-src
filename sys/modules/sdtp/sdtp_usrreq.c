@@ -177,7 +177,7 @@ sdtp_collect_bufs(struct sdtp_rpc *rpc, struct mbuf *bufs[MAX_BUFS], int iphlen)
 {
 	VALID_RPC_ASSERT(rpc);
 	RPC_LOCK_OWNED(rpc);
-	KASSERT(iphlen > 0, ("iphlen must be positive"));
+	MUST_POSITIVE(iphlen);
 
 	int n = 0, segment_offset = 0;
 	struct sdtp_packet_tailq_entry *entry;
@@ -218,7 +218,7 @@ sdtp_collect_bufs(struct sdtp_rpc *rpc, struct mbuf *bufs[MAX_BUFS], int iphlen)
 		rpc->msgin.copied_out = segment_offset + sdtp_payload_len(m, iphlen);
 	}
 
-	KASSERT(n >= 0, ("n must not be negative"));
+	MUST_NOT_NEGATIVE(n);
 	return (n);
 }
 
@@ -229,8 +229,8 @@ __sdtp_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc, struct mbuf *bufs[MAX
 	VALID_RPC_ASSERT(rpc);
 	RPC_LOCK_OWNED(rpc);
 	KASSERT(!(rpc->flags_atomic & RPC_COPYING_TO_USER), ("RPC_COPYING_TO_USER flag must be off"));
-	KASSERT(n > 0, ("n must be positive"));
-	KASSERT(iphlen > 0, ("iphlen must be positive"));
+	MUST_POSITIVE(n);
+	MUST_POSITIVE(iphlen);
 
 	int error = 0, rem, buf_header_rem;
 	struct mbuf *m;
@@ -249,8 +249,8 @@ __sdtp_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc, struct mbuf *bufs[MAX
 		header = SDTP_MTOD(m, struct sdtp_data_header *, iphlen);
 		rem = sdtp_payload_len(m, iphlen);
 		buf_header_rem = m->m_len - sizeof(*header) - iphlen;
-		KASSERT(rem > 0, ("rem must be positive"));
-		KASSERT(buf_header_rem > 0, ("buf_header_rem must be positive"));
+		MUST_POSITIVE(rem);
+		MUST_POSITIVE(buf_header_rem);
 
 		error = uiomove((char *)(header + 1), buf_header_rem, uio);
 		if (error != 0) {
@@ -295,8 +295,7 @@ __sdtp_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc, struct mbuf *bufs[MAX
 static int
 sdtp_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc)
 {
-	KASSERT(rpc->msgin.num_bufs > 0,
-	    ("the num of bufs should be positive: %d", rpc->msgin.num_bufs));
+	MUST_POSITIVE(rpc->msgin.num_bufs);
 
 	int error = 0, n = 0, iphlen = rpc->sdtpcb->iphlen;
 	struct mbuf *bufs[MAX_BUFS];
@@ -322,8 +321,8 @@ sdtp_get_record_entries(struct sdtp_rpc *rpc, struct sdtp_packet_tailq_entry *en
 {
 	VALID_RPC_ASSERT(rpc);
 	RPC_LOCK_OWNED(rpc);
-	KASSERT(rec_start >= 0, ("rec_start must not be negative: %d", rec_start));
-	KASSERT(rec_len > 0, ("rec_len must be positive: %d", rec_len));
+	MUST_NOT_NEGATIVE(rec_start);
+	MUST_POSITIVE(rec_len);
 
 	struct sdtp_packet_tailq_entry *entry;
 	struct sdtp_rx_logical_info *rx_info;
@@ -400,9 +399,10 @@ __sdtp_ctx_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc, struct sdtp_packe
 	VALID_RPC_ASSERT(rpc);
 	RPC_LOCK_OWNED(rpc);
 	KASSERT(!(rpc->flags_atomic & RPC_COPYING_TO_USER), ("RPC_COPYING_TO_USER flag must be off"));
-	KASSERT(n > 0 && n < MAX_BUFS, ("n must be in (0, MAX_BUFS)"));
+	MUST_POSITIVE(n);
+	KASSERT(n < MAX_BUFS, ("n (%d) must be less than MAX_BUFS (%d)", n, MAX_BUFS));
 	KASSERT(entries != NULL && *entries != NULL, ("entries must be valid"));
-	KASSERT(trailer_len >= 0, ("trailer len must not be negative: %d", trailer_len));
+	MUST_NOT_NEGATIVE(trailer_len);
 
 	struct mbuf *m = entries[0]->data;
 	KASSERT(m->m_flags & M_PKTHDR, ("m must be a packet header"));
@@ -419,7 +419,7 @@ __sdtp_ctx_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc, struct sdtp_packe
 			sizeof(struct tls_record_layer) + sizeof(uint64_t) : 0;
 		int post_len = (m->m_next == NULL) ? trailer_len : 0;
 
-		KASSERT(seg_rem >= 0, ("seg rem must not be negative: %d", seg_rem));
+		MUST_NOT_NEGATIVE(seg_rem);
 		if (seg_rem == 0) {
 			KASSERT(i < n, ("i: %d must be less than n: %d", i, n));
 			seg_rem = entries[i]->rx_info.length;
@@ -434,7 +434,7 @@ __sdtp_ctx_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc, struct sdtp_packe
 
 		int len = min(m->m_len - pre_len - post_len, uio->uio_resid);
 		len = min(len, rem);
-		KASSERT(len > 0, ("len must be positive: %d", len));
+		MUST_POSITIVE(len);
 		error = uiomove(SDTP_MTOD(m, char *, pre_len), len, uio);
 		if (error) {
 			goto __sdtp_ctx_copy_to_user_out;
@@ -474,8 +474,7 @@ sdtp_free_entries(struct sdtp_packet_tailq_entry *entries[MAX_BUFS], int n)
 static int
 sdtp_ctx_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc)
 {
-	KASSERT(rpc->msgin.num_bufs > 0,
-	    ("the num of bufs should be positive: %d", rpc->msgin.num_bufs));
+	MUST_POSITIVE(rpc->msgin.num_bufs);
 
 	int error = 0, iphlen = rpc->sdtpcb->iphlen, rec_start = -1, rec_len = -1, n = 0;
 	int trailer_len = -1;
@@ -503,7 +502,7 @@ sdtp_ctx_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc)
 			sdtp_rpc_debug(rpc, "failed decryption");
 			break;
 		}
-		KASSERT(trailer_len >= 0, ("trailer len must be not negative: %d", trailer_len));
+		MUST_NOT_NEGATIVE(trailer_len);
 
 		sdtp_debug_mbuf(rpc, entries[0]->data);
 		error = __sdtp_ctx_copy_to_user(uio, rpc, entries, n, trailer_len);

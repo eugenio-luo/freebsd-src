@@ -50,7 +50,7 @@ sdtp_send_control_buf(struct sdtp_inpcb *pcb, struct sdtp_peer *peer,
 	VALID_PEER_ASSERT(peer);
 
 	KASSERT(data != NULL, ("data must be valid"));
-	KASSERT(len != 0, ("len must be positive"));
+	MUST_POSITIVE(len);
 
 	struct mbuf *m;
 	struct inpcb *inp = &pcb->inp;
@@ -155,7 +155,7 @@ static void
 sdtp_msgout_init(struct sdtp_rpc *rpc, struct uio *uio)
 {
 	KASSERT(uio != NULL, ("uio must be valid"));
-	KASSERT(uio->uio_resid > 0, ("uio resid must be positive"));
+	MUST_POSITIVE(uio->uio_resid);
 
 	rpc->msgout.length = uio->uio_resid;
 	rpc->msgout.num_bufs = 0;
@@ -170,12 +170,9 @@ calc_unscheduled(struct sdtp_rpc *rpc)
 {
 	VALID_RPC_ASSERT(rpc);
 
-	KASSERT(rpc->msgout.length > 0,
-	    ("rpc->msgout.length must be positive"));
-	KASSERT(rpc->sdtpcb->sdtp->unsched_bytes > 0,
-	    ("unsched_bytes must be positive"));
-	KASSERT(rpc->msgout.pkt_data > 0,
-	    ("rpc->msgout.pkt_data must be positive"));
+	MUST_POSITIVE(rpc->msgout.length);
+	MUST_POSITIVE(rpc->sdtpcb->sdtp->unsched_bytes);
+	MUST_POSITIVE(rpc->msgout.pkt_data);
 
 	int unsched;
 	int length = rpc->msgout.length;
@@ -187,8 +184,7 @@ calc_unscheduled(struct sdtp_rpc *rpc)
 		unsched = length;
 	}
 
-	KASSERT(unsched > 0,
-	    ("we must able to send positive amount of unscheduled bytes"));
+	MUST_POSITIVE(unsched);
 	return unsched;
 }
 
@@ -272,10 +268,10 @@ sdtp_create_packet_mbuf(struct sdtp_rpc *rpc, struct uio *uio, int m_size,
 		MHLEN,
 	    ("packet head buffer should contain ip header and sdtp data header"));
 
-	KASSERT(m_size > 0, ("m_size must be positive: %d", m_size));
+	MUST_POSITIVE(m_size);
 
 	KASSERT(uio != NULL, ("uio must be valid"));
-	KASSERT(uio->uio_resid > 0, ("uio resid must be positive"));
+	MUST_POSITIVE(uio->uio_resid);
 
 	struct mbuf *m;
 	struct packet_mbuf_result res = {0};
@@ -293,10 +289,9 @@ sdtp_create_packet_mbuf(struct sdtp_rpc *rpc, struct uio *uio, int m_size,
 	res.buf = m;
 	res.result = m->m_pkthdr.len - header_len;
 
-	KASSERT(m->m_pkthdr.len > 0,
-	    ("mbuf chain total length should be positive"));
+	MUST_POSITIVE(m->m_pkthdr.len);
 	KASSERT(res.buf != NULL, ("res buf must be valid"));
-	KASSERT(res.result > 0, ("res result must be positive"));
+	MUST_POSITIVE(res.result);
 
 	sdtp_rpc_debug(rpc, "offset: %d, length: %d",
 	    offset, res.result);
@@ -322,9 +317,9 @@ sdtp_fill_packets(struct sdtp_rpc *rpc, struct uio *uio,
 	RPC_LOCK_OWNED(rpc);
 
 	KASSERT(uio != NULL, ("uio must be valid"));
-	KASSERT(uio->uio_resid > 0, ("uio resid must be positive"));
+	MUST_POSITIVE(uio->uio_resid);
 
-	KASSERT(max_packet_size > 0, ("max_packet_size must be positive: %d", max_packet_size));
+	MUST_POSITIVE(max_packet_size);
 
 	int bytes_left, offset = 0, error = 0;
 	struct sdtp_packet_slist_entry *prev = NULL;
@@ -588,7 +583,7 @@ sdtp_message_out(struct sdtp_rpc *rpc, struct uio *uio, bool immediate_send)
 	RPC_LOCK_OWNED(rpc);
 
 	KASSERT(uio != NULL, ("uio must be valid"));
-	KASSERT(uio->uio_resid > 0, ("uio resid must be positive"));
+	MUST_POSITIVE(uio->uio_resid);
 
 	int max_packet_size, error = 0;
 	//, overlap_xmit;
@@ -611,7 +606,7 @@ sdtp_message_out(struct sdtp_rpc *rpc, struct uio *uio, bool immediate_send)
 	    rpc->peer->nh->nh_ifp->if_mtu);
 	max_packet_size = mtu -
 	    IP_SDTP_HEADER_SIZE(rpc->sdtpcb, struct sdtp_data_header);
-	KASSERT(max_packet_size > 0, ("max_packet_size must be positive"));
+	MUST_POSITIVE(max_packet_size);
 	sdtp_rpc_debug(rpc, "mtu: %d, max_packet_size: %d", mtu,
 	    max_packet_size);
 
@@ -653,8 +648,8 @@ void
 sdtp_resend_data(struct sdtp_rpc *rpc, int start, int end, int priority)
 {
 	VALID_RPC_ASSERT(rpc);
-	KASSERT(start >= 0, ("start must not be negative: %d", start));
-	KASSERT(end >= 0, ("end must not be negative: %d", end));
+	MUST_NOT_NEGATIVE(start);
+	MUST_NOT_NEGATIVE(end);
 	KASSERT(end >= start,
 	    ("end must be more than start: %d, %d", end, start));
 
