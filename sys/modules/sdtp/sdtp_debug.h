@@ -294,6 +294,12 @@ sdtp_tls_header_debug(struct tls_record_layer *header, const char *fmt, ...)
 		    ("interest " #INTEREST " should not be on any list"));  \
 	} while (0)
 
+#define MUST_POSITIVE(X) \
+	do { KASSERT((X) > 0, ("%s: " #X " must be positive: %jd", __func__, (intmax_t)(X))); } while (0)
+
+#define MUST_NOT_NEGATIVE(X) \
+	do { KASSERT((X) >= 0, ("%s: " #X " must be not negative: %jd", __func__, (intmax_t)(X))); } while (0)
+
 static inline void
 sdtp_debug_print_bucket_rpcs(struct sdtp_rpc_bucket *buckets, size_t size,
     struct sdtp_rpc *owned_rpc)
