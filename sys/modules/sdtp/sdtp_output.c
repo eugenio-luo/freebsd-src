@@ -250,9 +250,10 @@ sdtp_fill_data_header(struct sdtp_rpc *rpc, struct mbuf *m, int offset)
 		header->padding[0] = (offset >> 16) & 0xFF;
 		header->padding[1] = (offset >> 8) & 0xFF;
 		header->padding[2] = offset & 0xFF;
+	} else {
+		header->data_segment.offset_be = htonl(offset);
 	}
 
-	header->data_segment.offset_be = ntohl(offset);
 	header->ack.client_id_be = htobe64(rpc->id ^ 1);
 	header->ack.server_port_be = htons(rpc->dport);
 }
