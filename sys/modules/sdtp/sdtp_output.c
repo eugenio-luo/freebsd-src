@@ -395,7 +395,7 @@ sdtp_fill_packets_slist_error:
 }
 
 static void
-sdtp_send_data(struct sdtp_rpc *rpc, struct mbuf *buf, int priority)
+sdtp_send_data(struct sdtp_rpc *rpc, struct mbuf *buf, int priority, bool overwrite_id)
 {
 	VALID_RPC_ASSERT(rpc);
 	RPC_LOCK_NOTOWNED(rpc);
@@ -419,7 +419,6 @@ sdtp_send_data(struct sdtp_rpc *rpc, struct mbuf *buf, int priority)
 	    rpc->sdtpcb->iphlen);
 	header->cutoff_version_be = rpc->peer->cutoff_version_be;
 
-	// TODO: we need to have custom checksum for SDTP
 	buf->m_pkthdr.csum_flags = CSUM_IP;
 	buf->m_pkthdr.csum_data = 0;
 
@@ -430,22 +429,23 @@ sdtp_send_data(struct sdtp_rpc *rpc, struct mbuf *buf, int priority)
 		INP_WLOCK(inp);
 		NET_EPOCH_ENTER(et);
 
-		memset(ip_header, 0, sizeof(struct ip));
+		//memset(ip_header, 0, sizeof(struct ip));
 
 		ip_header->ip_v = IPVERSION;
 		ip_header->ip_hl = sizeof(struct ip) >> 2;
-		ip_header->ip_off = htons(IP_DF);
 		ip_header->ip_tos = inp->inp_ip_tos;
 		ip_header->ip_len = htons(buf->m_pkthdr.len);
-		// ip_header->ip_ttl = inp->inp_ip_ttl;
+		if (overwrite_id) {
+			ip_fillid(ip_header, false);
+		}
+		ip_header->ip_off = htons(IP_DF);
 		ip_header->ip_ttl = 64;
-		// KASSERT(inp->inp_ip_ttl > 0, ("need ttl > 0"));
 		ip_header->ip_p = IPPROTO_SDTP;
 		ipv6_to_ipv4(&rpc->peer->addr, &ip_header->ip_dst);
 		ip_header->ip_src = inp->inp_laddr;
-		ip_header->ip_sum = in_cksum_hdr(ip_header);
+		ip_header->ip_sum = 0;
 
-		int res = ip_output(buf, NULL, &inp->inp_route, 0, NULL, inp);
+		int res = ip_output(buf, NULL, &inp->inp_route, IP_RAWOUTPUT, NULL, inp);
 		NET_EPOCH_EXIT(et);
 		INP_WUNLOCK(inp);
 		sdtp_rpc_debug(rpc, "ip_output return error: %d", res);
@@ -545,7 +545,7 @@ sdtp_send_next_data(struct sdtp_rpc *rpc, bool force)
 
 		txm = m_dup(buf, M_NOWAIT);
 		KASSERT(txm != NULL, ("txm must be valid"));
-		sdtp_send_data(rpc, txm, priority);
+		sdtp_send_data(rpc, txm, priority, !is_encrypted_rpc(rpc));
 		force = false;
 
 		sdtp_rpc_lock(rpc);
@@ -651,6 +651,6 @@ sdtp_resend_data(struct sdtp_rpc *rpc, int start, int end, int priority)
 		KASSERT(txm != NULL, ("txm must be valid"));
 		sdtp_rpc_debug(rpc, "resend data from %d to %d", offset,
 		    offset + dbytes);
-		sdtp_send_data(rpc, txm, priority);
+		sdtp_send_data(rpc, txm, priority, !is_encrypted_rpc(rpc));
 	}
 }
