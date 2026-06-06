@@ -148,9 +148,26 @@ large_v4_cleanup()
     cleanup_state
 }
 
+atf_test_case ipv6_unsupported
+ipv6_unsupported_head()
+{
+    atf_set "descr" "SDTP rejects IPv6 sockets"
+}
+ipv6_unsupported_body()
+{
+    atf_require_prog kldstat
+    atf_require_prog "$(atf_get_srcdir)/sdtp_test_ipv6"
+
+    kldstat -n sdtp >/dev/null 2>&1 || atf_skip "sdtp module is not loaded"
+
+    atf_check -s exit:0 -o empty -e empty \
+        "$(atf_get_srcdir)/sdtp_test_ipv6"
+}
+
 atf_init_test_cases()
 {
     atf_add_test_case small_v4
     atf_add_test_case medium_v4
     atf_add_test_case large_v4
+    atf_add_test_case ipv6_unsupported
 }
