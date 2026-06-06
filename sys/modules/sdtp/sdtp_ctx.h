@@ -98,6 +98,7 @@ struct sdtp_rx_logical_info sdtp_calc_rx_logical_info(struct sdtp_rpc *rpc, stru
 bool sdtp_ctx_record_complete(struct sdtp_rpc *rpc);
 int sdtp_ctx_decrypt(struct sdtp_rpc *rpc, int iphlen, struct sdtp_packet_tailq_entry **entries, int n, int *trailer_len);
 void sdtp_debug_rx_info(struct sdtp_rpc *rpc, struct sdtp_rx_logical_info *rx_info);
+int sdtp_tls_fill_packets(struct sdtp_rpc *rpc, struct uio *uio, int max_packet_size);
 
 static inline void
 sdtp_ctx_hold(struct sdtp_ctx *ctx)

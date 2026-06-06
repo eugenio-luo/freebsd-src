@@ -13,6 +13,9 @@
 #include "sdtp.h"
 #include "sdtp_rpc.h"
 
+int sdtp_packet_insert_list(struct sdtp_rpc *rpc, struct mbuf *m, struct sdtp_packet_slist_entry **prev);
+void sdtp_fill_data_header(struct sdtp_rpc *rpc, struct mbuf *m, int offset);
+
 void sdtp_resend_data(struct sdtp_rpc *rpc, int start, int end, int priority);
 void sdtp_send_unknown(struct sdtp_inpcb *pcb, struct sdtp_common_header *header,
     struct in6_addr *source);

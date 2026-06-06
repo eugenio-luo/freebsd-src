@@ -228,7 +228,7 @@ sdtp_uio_to_mbuf(struct sdtp_rpc *rpc, struct mbuf **mp, struct uio *uio, int m_
 	return (0);
 }
 
-static void
+void
 sdtp_fill_data_header(struct sdtp_rpc *rpc, struct mbuf *m, int offset)
 {
 	struct sdtp_data_header *header;
@@ -393,6 +393,33 @@ sdtp_fill_packets(struct sdtp_rpc *rpc, struct uio *uio,
 sdtp_fill_packets_slist_error:
 	sdtp_rpc_lock(rpc);
 	return error;
+}
+
+int
+sdtp_packet_insert_list(struct sdtp_rpc *rpc, struct mbuf *m, struct sdtp_packet_slist_entry **prev)
+{
+	struct sdtp_packet_slist_entry *entry;
+
+	entry = SDTP_ZONE_GET(zones.sdtp_zone_packet_slist_entry,
+		struct sdtp_packet_slist_entry);
+	if (entry == NULL) {
+		sdtp_rpc_lock(rpc);
+		return (ENOBUFS);
+	}
+
+	entry->data = m;
+
+	sdtp_rpc_lock(rpc);
+	if (*prev == NULL) {
+		SLIST_INSERT_HEAD(&rpc->msgout.packets, entry, link);
+		rpc->msgout.next_xmit = &rpc->msgout.packets.slh_first;
+	} else {
+		SLIST_INSERT_AFTER(*prev, entry, link);
+	}
+	*prev = entry;
+	++rpc->msgout.num_bufs;
+
+	return (0);
 }
 
 static void
@@ -600,7 +627,11 @@ sdtp_message_out(struct sdtp_rpc *rpc, struct uio *uio, bool immediate_send)
 	// overlap_xmit = rpc->msgout.length > 2 * max_packet_size;
 	atomic_set_32(&rpc->flags_atomic, RPC_COPYING_FROM_USER);
 
-	error = sdtp_fill_packets(rpc, uio, max_packet_size);
+	if (is_encrypted_rpc(rpc)) {
+		error = sdtp_tls_fill_packets(rpc, uio, max_packet_size);
+	} else {
+		error = sdtp_fill_packets(rpc, uio, max_packet_size);
+	}
 	if (error) {
 		goto sdtp_message_out_error;
 	}

@@ -8,12 +8,12 @@
  */
 
 #include <sys/param.h>
-
 #include <sys/socket.h>
 #include <sys/socketvar.h>
 #include <sys/sockopt.h>
 #include <sys/ktls.h>
 #include <sys/uio.h>
+#include <sys/endian.h>
 
 #include <net/if.h>
 #include <net/if_var.h>
@@ -30,6 +30,7 @@
 #include "sdtp_ctx.h"
 #include "sdtp_debug.h"
 #include "sdtp_structs.h"
+#include "sdtp_output.h"
 
 extern struct sdtp_zones zones;
 
@@ -799,5 +800,271 @@ sdtp_ctx_decrypt(struct sdtp_rpc *rpc, int iphlen, struct sdtp_packet_tailq_entr
 
 	sdtp_rpc_lock(rpc);
 	++rpc->crypto.rx_seqno;
+	return (error);
+}
+
+// Head Packet:
+// [ IP header ][ SDTP header ][ TLS header ][ nonce ]
+// [ offset #1 ][ payload #1 ]...[ offset #N ][ payload #N ]
+// [ trailer ]
+//
+// headers_len => [ IP header ][ SDTP header ][ offset ]
+// max_packet_size => frame size - [ IP header ][ SDTP header ][ offset ]
+// data_len => [ payload #1 ]...[ payload #N ]
+// pre_len => [ TLS header ][ nonce ]
+// post_len => [ trailer ]
+// payload_len => [ offset #1 ][ payload #1 ]...[ offset #N ][ payload #N ]
+// seg_len => [ offset ]
+
+struct record_sizes {
+	int headers;
+	int max_packet;
+	int data;
+	int pre;
+	int post;
+	int nsegs;
+	int payload;
+	int seg;
+};
+
+static int
+sdtp_allocate_extpg_mbuf(struct mbuf **mp, struct sdtp_rpc *rpc, int len)
+{
+	struct mbuf *m;
+	int n;
+
+	n = howmany(len, PAGE_SIZE);
+	if (n > MBUF_PEXT_MAX_PGS) {
+		return (EMSGSIZE);
+	}
+
+	m = mb_alloc_ext_plus_pages(len, M_NOWAIT);
+	if (m == NULL) {
+		return (ENOBUFS);
+	}
+
+	m->m_len = len;
+	m->m_epg_1st_off = 0;
+	m->m_epg_last_len = len - PAGE_SIZE * (n - 1);
+	m->m_epg_hdrlen = 0;
+	m->m_epg_trllen = 0;
+	m->m_epg_nrdy = 0;
+	m->m_epg_seqno = rpc->crypto.tx_seqno++;
+
+	MBUF_EXT_PGS_ASSERT_SANITY(m);
+	*mp = m;
+	return (0);
+}
+
+static void
+sdtp_extpg_copyin_offset(struct mbuf *m, int seg_off, uint32_t offset)
+{
+	struct sdtp_data_segment data_seg = {
+		.offset_be = htonl(offset),
+	};
+
+	m_copyback(m, seg_off, sizeof(data_seg), (c_caddr_t)&data_seg);
+	sdtp_debug("copy offset segment %d to physical offset %d\n", offset, seg_off);
+}
+
+static int
+sdtp_tls_allocate_packet_mbuf(struct mbuf **mp, struct sdtp_rpc *rpc, int packet_size, int offset, uint16_t i)
+{
+	struct mbuf *m;
+	struct ip *ip_header;
+
+	m = m_get2(packet_size, M_NOWAIT, MT_DATA, M_PKTHDR);
+	if (m == NULL) {
+		return (ENOBUFS);
+	}
+	m->m_len = packet_size;
+	m->m_pkthdr.len = packet_size;
+
+	sdtp_fill_data_header(rpc, m, offset);
+
+	ip_header = mtod(m, struct ip *);
+	ip_header->ip_id = ntohs(i);
+
+	*mp = m;
+
+	sdtp_rpc_debug(rpc, "allocate pkt mbuf of size %d which has offset %d", packet_size, offset);
+	return (0);
+}
+
+static void
+sdtp_tls_fill_iov(struct iovec *iov, struct mbuf *m, int offset, int len)
+{
+	iov->iov_base = mtod(m, char *) + offset;
+	iov->iov_len = len;
+	sdtp_debug("create iov at offset %d with len %d\n", offset, len);
+}
+
+static struct record_sizes
+sdtp_calc_tls_record_sizes(struct sdtp_rpc *rpc, int max_packet_size)
+{
+	struct record_sizes rsizes;
+
+	rsizes.headers = IP_SDTP_HEADER_SIZE(rpc->sdtpcb, struct sdtp_data_header);
+	rsizes.max_packet = max_packet_size;
+	rsizes.data = rpc->msgout.length;
+	rsizes.pre = sdtp_pre_len(rpc);
+	rsizes.post = sdtp_post_len(rpc);
+
+	int record_len = rsizes.data + rsizes.pre + rsizes.post;
+	rsizes.nsegs = howmany(record_len, rsizes.max_packet);
+	rsizes.payload = sizeof(struct sdtp_data_segment) * rsizes.nsegs + rsizes.data;
+	rsizes.seg = sizeof(struct sdtp_data_segment);
+
+	MUST_POSITIVE(rsizes.headers);
+	MUST_POSITIVE(rsizes.data);
+	MUST_POSITIVE(rsizes.pre);
+	MUST_POSITIVE(rsizes.post);
+	MUST_POSITIVE(rsizes.nsegs);
+	MUST_POSITIVE(rsizes.payload);
+	MUST_POSITIVE(rsizes.seg);
+
+	return rsizes;
+}
+
+// TODO: clean up mbufs correctly when there's an error
+// TODO: handle the case a message can be split over multiple TLS records
+// TODO: check locks if they are correct
+int
+sdtp_tls_fill_packets(struct sdtp_rpc *rpc, struct uio *uio, int max_packet_size)
+{
+	VALID_RPC_ASSERT(rpc);
+	RPC_LOCK_OWNED(rpc);
+	KASSERT(rpc->crypto.ctx != NULL, ("rpc ctx must be valid"));
+
+	KASSERT(uio != NULL, ("uio must be valid"));
+	KASSERT(uio->uio_resid > 0, ("uio resid must be positive"));
+
+	KASSERT(max_packet_size > 0, ("max_packet_size must be positive: %d", max_packet_size));
+
+	if (max_packet_size > MJUMPAGESIZE) {
+		return (EMSGSIZE);
+	}
+
+	int error, enq_cnt;
+	struct record_sizes rsizes;
+	struct mbuf *m = NULL;
+	struct iovec *iov = NULL;
+	struct sdtp_packet_slist_entry *prev = NULL;
+	struct ktls_ocf_encrypt_state state;
+	struct ktls_session *session = sdtp_ctx_get_session(rpc, true);
+
+	rsizes = sdtp_calc_tls_record_sizes(rpc, max_packet_size);
+	sdtp_rpc_debug(rpc, "total TLS message length to send: %d", rsizes.data);
+
+	sdtp_rpc_unlock(rpc);
+
+	error = sdtp_allocate_extpg_mbuf(&m, rpc, rsizes.payload);
+	if (error != 0) {
+		sdtp_rpc_lock(rpc);
+		goto sdtp_tls_fill_packets_out;
+	}
+
+	iov = malloc(sizeof(*iov) * rsizes.nsegs, M_TEMP, M_NOWAIT | M_ZERO);
+	if (iov == NULL) {
+		error = ENOMEM;
+		sdtp_rpc_lock(rpc);
+		goto sdtp_tls_fill_packets_out;
+	}
+
+	sdtp_rpc_lock(rpc);
+
+	int data_off = 0;
+	int payload_off = 0;
+	for (int i = 0; i < rsizes.nsegs; ++i) {
+		struct mbuf *pktm;
+
+		int pre = (i == 0) ? rsizes.pre : 0;
+		int post = (i == rsizes.nsegs - 1) ? rsizes.post : 0;
+
+		int payload_start = rsizes.headers - rsizes.seg + pre;
+		int data_max_size = rsizes.max_packet - pre - post;
+		int data_left = rsizes.data - data_off;
+
+		if (data_max_size < 0) {
+			error = EMSGSIZE;
+			goto sdtp_tls_fill_packets_out;
+		}
+
+		int data_len = min(data_max_size, data_left);
+		if (i == rsizes.nsegs - 1 && data_left != data_len) {
+			error = EMSGSIZE;
+			goto sdtp_tls_fill_packets_out;
+		}
+
+		int payload_len = rsizes.seg + data_len;
+		int iov_len = payload_len + post;
+		int pkt_size = payload_start + iov_len;
+
+		sdtp_rpc_debug(rpc, "data_off: %d, payload_off: %d, data_len: %d, payload_len: %d, iov_len: %d, pkt_size: %d",
+				data_off, payload_off, data_len, payload_len, iov_len, pkt_size);
+
+		// 1. Create mbuf chain with [ IP header ][ SDTP header ][ TLS header ][ nonce ] and [ trailer ],
+		//   with enough space in the middle for the encrypted payload.
+
+		sdtp_rpc_unlock(rpc);
+		error = sdtp_tls_allocate_packet_mbuf(&pktm, rpc, pkt_size, 0, i);
+		if (error != 0) {
+			goto sdtp_tls_fill_packets_out;
+		}
+
+		sdtp_tls_fill_iov(&iov[i], pktm, payload_start, iov_len);
+
+		error = sdtp_packet_insert_list(rpc, pktm, &prev);
+		if (error != 0) {
+			sdtp_free_mbuf(pktm);
+			goto sdtp_tls_fill_packets_out;
+		}
+
+		// 2. Fill mbuf with [ offset #i ][ payload #i ] where i \in [0, nsegs).
+
+		sdtp_extpg_copyin_offset(m, payload_off, data_off);
+
+		if (data_len != 0) {
+			error = m_unmapped_uiomove(m, payload_off + rsizes.seg, uio, data_len);
+			sdtp_rpc_debug(rpc, "copied from uio %d bytes of data to offset %d", data_len, payload_off + rsizes.seg);
+			if (error != 0) {
+				sdtp_free_mbuf(pktm);
+				goto sdtp_tls_fill_packets_out;
+			}
+		}
+
+		data_off += data_len;
+		payload_off += payload_len;
+	}
+
+	ktls_frame(m, session, &enq_cnt, TLS_RLTYPE_APP);
+
+	struct tls_record_layer *hdr = (struct tls_record_layer *)m->m_epg_hdr;
+	be64enc((char *)(hdr + 1), m->m_epg_seqno);
+	memcpy((char *)iov[0].iov_base - rsizes.pre, m->m_epg_hdr, rsizes.pre);
+
+	sdtp_rpc_debug(rpc,
+	    "sender seq=%ju hdr=%02x %02x %02x %02x %02x explicit=%D",
+	    (uintmax_t)m->m_epg_seqno,
+	    m->m_epg_hdr[0], m->m_epg_hdr[1], m->m_epg_hdr[2],
+	    m->m_epg_hdr[3], m->m_epg_hdr[4],
+	    m->m_epg_hdr + sizeof(struct tls_record_layer), ":");
+
+	sdtp_rpc_unlock(rpc);
+	error = ktls_ocf_encrypt(&state, session, m, iov, rsizes.nsegs);
+	sdtp_rpc_lock(rpc);
+	if (error != 0) {
+		goto sdtp_tls_fill_packets_out;
+	}
+
+sdtp_tls_fill_packets_out:
+	sdtp_rpc_unlock(rpc);
+	if (m != NULL) {
+		sdtp_free_mbuf(m);
+	}
+	if (iov != NULL) {
+		free(iov, M_TEMP);
+	}
+	sdtp_rpc_lock(rpc);
 	return (error);
 }
