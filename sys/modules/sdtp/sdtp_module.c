@@ -62,6 +62,7 @@ sdtp_module_load(void)
 	if (error != 0)
 		return (error);
 #endif
+/*
 #ifdef INET6
 	error = protosw_register(&inet6domain, &sdtp6_protosw);
 	if (error != 0)
@@ -70,6 +71,7 @@ sdtp_module_load(void)
 	if (error != 0)
 		return (error);
 #endif
+*/
 
 	/*
 	 * error = kthread_add(&sdtp_timer_main, NULL, NULL, &timer_kthread, 0, 0,
@@ -94,10 +96,12 @@ sdtp_module_unload(void)
 	(void)ipproto_unregister(IPPROTO_SDTP);
 	(void)protosw_unregister(&sdtp_protosw);
 #endif
+/*
 #ifdef INET6
 	(void)ip6proto_unregister(IPPROTO_SDTP);
 	(void)protosw_unregister(&sdtp6_protosw);
 #endif
+*/
 
 	return (error);
 }
