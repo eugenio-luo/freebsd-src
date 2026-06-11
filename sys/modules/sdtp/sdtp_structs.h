@@ -60,6 +60,10 @@ struct sdtp_metrics {
 	uint64_t freed_send_pkts_atomic;
 
 	uint64_t received_pkts[SDTP_ACK - SDTP_DATA + 1];
+
+	uint64_t opened_sockets;
+	uint64_t closed_sockets;
+	uint64_t destroyed_sockets;
 };
 
 struct sdtp_dead_dst {

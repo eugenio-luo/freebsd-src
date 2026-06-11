@@ -329,6 +329,23 @@ sdtp_metrics_init(struct sdtp *sdtp)
 	    &sdtp->metrics.received_pkts[SDTP_ACK - SDTP_DATA], 0,
 	    "received_ack_pkts");
 
+	SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx,
+	    SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+	    "opened_sockets", CTLFLAG_RW,
+	    &sdtp->metrics.opened_sockets, 0,
+	    "opened_sockets");
+	SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx,
+	    SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+	    "closed_sockets", CTLFLAG_RW,
+	    &sdtp->metrics.closed_sockets, 0,
+	    "closed_sockets");
+	SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx,
+	    SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+	    "destroyed_sockets", CTLFLAG_RW,
+	    &sdtp->metrics.destroyed_sockets, 0,
+	    "destroyed_sockets");
+
+
 	return err;
 }
 
