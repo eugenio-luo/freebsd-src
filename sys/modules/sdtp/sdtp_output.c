@@ -144,7 +144,7 @@ sdtp_send_unknown(struct sdtp_inpcb *pcb, struct sdtp_common_header *header,
 	unknown.common.type = SDTP_UNKNOWN;
 	unknown.common.sender_id_be = htobe64(
 	    sdtp_local_id(header->sender_id_be));
-	peer = sdtp_find_peer(&pcb->sdtp->peers, source, &pcb->inp, &error);
+	peer = sdtp_find_peer(&pcb->sdtp->peers, source, &error);
 	if (error == 0 && peer != NULL) {
 		sdtp_send_control_buf(pcb, peer, &unknown, sizeof(unknown));
 		sdtp_peer_put(peer);

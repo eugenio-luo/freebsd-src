@@ -92,8 +92,7 @@ sdtp_resolve_nh(struct in6_addr *addr, int *error)
 }
 
 struct sdtp_peer *
-sdtp_find_peer(struct sdtp_peermap *peermap, struct in6_addr *addr,
-    struct inpcb *pcb, int *error)
+sdtp_find_peer(struct sdtp_peermap *peermap, struct in6_addr *addr, int *error)
 {
 	struct sdtp_peer *peer;
 

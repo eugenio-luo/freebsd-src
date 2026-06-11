@@ -249,7 +249,7 @@ sdtp_new_client_rpc(struct sdtp_inpcb *pcb, struct in6_addr *dest,
 	rpc->state = SDTP_RPC_OUTGOING;
 
 	bucket = sdtp_client_rpc_bucket(pcb, rpc->id);
-	rpc->peer = sdtp_find_peer(&pcb->sdtp->peers, dest, &pcb->inp, error);
+	rpc->peer = sdtp_find_peer(&pcb->sdtp->peers, dest, error);
 	if (*error != 0) {
 		sdtp_pcb_debug(pcb, "new client rpc can't find peer");
 		goto sdtp_new_client_rpc_error;
@@ -410,8 +410,7 @@ sdtp_new_server_rpc(struct sdtp_data_header *header,
 		    ntohl(header->message_length_be),
 		    ntohl(header->incoming_be));
 
-	rpc->peer = sdtp_find_peer(&pcb->sdtp->peers, source, &pcb->inp,
-	    &error);
+	rpc->peer = sdtp_find_peer(&pcb->sdtp->peers, source, &error);
 	if (error != 0) {
 		sdtp_pcb_debug(pcb, "new server rpc can't find peer");
 		goto sdtp_new_server_rpc_error;
@@ -903,10 +902,10 @@ sdtp_need_ack_packet(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc,
 		// TODO: implement this
 		// sdtp_request_retrans(rpc);
 		sdtp_pcb_debug(pcb, "need_ack: request retransmit");
+		sdtp_pcb_lock(pcb);
 		return;
 	} else {
-		peer = sdtp_find_peer(&pcb->sdtp->peers, source, &pcb->inp,
-		    &error);
+		peer = sdtp_find_peer(&pcb->sdtp->peers, source, &error);
 		if (peer == NULL || error != 0) {
 			sdtp_pcb_debug(pcb, "need_ack: failed to find peer: %d",
 			    error);
@@ -1020,7 +1019,7 @@ sdtp_cutoffs_packet(struct sdtp_inpcb *pcb, struct sdtp_cutoffs_header *header,
 	struct sdtp_peer *peer;
 	int i, error;
 
-	peer = sdtp_find_peer(&pcb->sdtp->peers, source, &pcb->inp, &error);
+	peer = sdtp_find_peer(&pcb->sdtp->peers, source, &error);
 	if (peer == NULL) {
 		return;
 	}
