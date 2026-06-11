@@ -276,6 +276,10 @@ sdtp_new_client_rpc(struct sdtp_inpcb *pcb, struct in6_addr *dest,
 		goto sdtp_new_client_rpc_error;
 	}
 
+	if (pcb->ctx_map.active) {
+		sdtp_rpc_ctx_init(pcb, rpc);
+	}
+
 	SDTP_QUEUE_LOCK(&pcb->active_rpcs);
 	SDTP_LIST_LOCK(&bucket->rpcs);
 	rpc->spinlock_p = &bucket->rpcs.spinlock;
