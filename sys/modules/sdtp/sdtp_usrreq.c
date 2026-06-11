@@ -53,6 +53,9 @@ sdtp_attach(struct socket *so, int proto, struct thread *p)
 
 	error = sdtp_inpcb_alloc(so, sdtp);
 
+	if (error == 0) {
+		SDTP_METRIC(sdtp, opened_sockets, 1);
+	}
 	return error;
 }
 
@@ -804,23 +807,29 @@ sdtp_soreceive_done:
 static void
 sdtp_close(struct socket *so)
 {
-	struct epoch_tracker et;
 	struct sdtp_inpcb *pcb;
 
 	pcb = sdtp_so_pcb(so);
-	if (pcb == NULL) {
-		return;
+	KASSERT(pcb != NULL, ("pcb must be valid"));
+
+	sdtp_inpcb_shutdown(pcb);
+	SDTP_METRIC(sdtp, closed_sockets, 1);
+}
+
+static void
+sdtp_detach(struct socket *so)
+{
+	struct sdtp_inpcb *pcb;
+
+	pcb = sdtp_so_pcb(so);
+	KASSERT(pcb != NULL, ("pcb must be valid"));
+
+	if (!pcb->shutdown) {
+		sdtp_inpcb_shutdown(pcb);
+		SDTP_METRIC(sdtp, closed_sockets, 1);
 	}
-
-	sdtp_inpcb_free(pcb);
-
-	NET_EPOCH_ENTER(et);
-
-	SOCK_LOCK(so);
-	so->so_pcb = NULL;
-	SOCK_UNLOCK(so);
-
-	NET_EPOCH_EXIT(et);
+	sdtp_pcb_free(pcb);
+	SDTP_METRIC(sdtp, destroyed_sockets, 1);
 }
 
 static int
@@ -1167,6 +1176,7 @@ struct protosw sdtp_protosw = {
 	.pr_close = sdtp_close,
 	.pr_sosend = sdtp_sosend,
 	.pr_ctloutput = sdtp_ctloutput,
+	.pr_detach =	sdtp_detach,
 	/*
 	.pr_connect =	sdtp_connect,
 	.pr_abort =	sdp_abort,
@@ -1195,12 +1205,12 @@ struct protosw sdtp6_protosw = {
 	.pr_close = sdtp_close,
 	.pr_sosend = sdtp_sosend,
 	.pr_ctloutput = sdtp_ctloutput,
+	.pr_detach =	sdtp_detach,
 	/*
 	.pr_connect =	sdtp_connect,
 	.pr_abort =	sdp_abort,
 	.pr_accept =	sdp_accept,
 	.pr_control =	sdtp_control,
-	.pr_detach =	sctp_close,
 	.pr_disconnect = sctp_disconnect,
 	.pr_listen =	sctp_listen,
 	.pr_peeraddr =	sctp_peeraddr,

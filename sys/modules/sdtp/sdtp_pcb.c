@@ -213,7 +213,7 @@ sdtp_inpcb_alloc(struct socket *so, struct sdtp *sdtp)
 }
 
 void
-sdtp_inpcb_free(struct sdtp_inpcb *pcb)
+sdtp_inpcb_shutdown(struct sdtp_inpcb *pcb)
 {
 	struct sdtp_rpc *rpc, *next_rpc;
 	struct sdtp_interest *interest;
@@ -258,10 +258,43 @@ sdtp_inpcb_free(struct sdtp_inpcb *pcb)
 	SDTP_QUEUE_UNLOCK(&pcb->response_interests);
 	sdtp_pcb_unlock(pcb);
 
-	sdtp_rpc_reap(pcb, /* reap_all */ true);
-
 	/*
 	 TODO:
 	    homals_destroy_ctxs(hsk->homals_ctx_buckets);
 	*/
+}
+
+void
+sdtp_pcb_free(struct sdtp_inpcb *pcb)
+{
+	VALID_PCB_ASSERT(pcb);
+
+	struct inpcb *inp = &pcb->inp;
+
+	int i = 0;
+	while (!SDTP_QUEUE_EMPTY(&pcb->dead_rpcs)) {
+		sdtp_rpc_reap(pcb, /* reap_all */ true);
+		KASSERT(i < 6, ("%s: hanged while freeing dead RPCs", __func__));
+		++i;
+	}
+
+	mtx_destroy(&pcb->spinlock);
+	SDTP_QUEUE_FREE(&pcb->active_rpcs);
+	SDTP_QUEUE_FREE(&pcb->dead_rpcs);
+
+	SDTP_LIST_FREE(&pcb->ready_requests);
+	SDTP_LIST_FREE(&pcb->ready_responses);
+
+	SDTP_QUEUE_FREE(&pcb->request_interests);
+	SDTP_QUEUE_FREE(&pcb->response_interests);
+
+	for (int i = 0; i < SDTP_CLIENT_RPC_BUCKETS; ++i) {
+		SDTP_LIST_FREE(&pcb->client_rpc_buckets[i].rpcs);
+	}
+	for (int i = 0; i < SDTP_SERVER_RPC_BUCKETS; ++i) {
+		SDTP_LIST_FREE(&pcb->server_rpc_buckets[i].rpcs);
+	}
+
+	INP_WLOCK(inp);
+	in_pcbfree(inp);
 }

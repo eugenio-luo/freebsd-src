@@ -145,6 +145,11 @@
 
 #define SDTP_QUEUE_LINKED(ELEM, LINK) ((ELEM)->LINK.owner != NULL)
 
+#define SDTP_QUEUE_FREE(Q)                     \
+	do {                                   \
+		mtx_destroy(&((Q)->spinlock)); \
+	} while (0)
+
 /*
  *  Thread-safe list
  */
@@ -263,6 +268,11 @@
 		}                                           \
 		linked;                                     \
 	})
+
+#define SDTP_LIST_FREE(Q)                     \
+	do {                                   \
+		mtx_destroy(&((Q)->spinlock)); \
+	} while (0)
 
 #define SDTP_LIST_LINKED(ELEM, LINK) ((ELEM)->LINK.owner != NULL)
 

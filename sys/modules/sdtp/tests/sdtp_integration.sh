@@ -1,6 +1,7 @@
 #!/usr/libexec/atf-sh
 
 COUNT=20000
+CLOSE_TEST_SOCKET_COUNT=3000
 
 require_tools()
 {
@@ -164,10 +165,50 @@ ipv6_unsupported_body()
         "$(atf_get_srcdir)/sdtp_test_ipv6"
 }
 
+atf_test_case close_detach
+close_detach_head()
+{
+    common_head
+    atf_set "descr" "SDTP close releases bound ports and detaches socket state"
+}
+close_detach_body()
+{
+    atf_require_prog kldstat
+    atf_require_prog sysctl
+    atf_require_prog "$(atf_get_srcdir)/sdtp_test_close"
+
+    kldstat -n sdtp >/dev/null 2>&1 || atf_skip "sdtp module is not loaded"
+
+    opened_before=$(sysctl -n net.sdtp.opened_sockets) ||
+        atf_fail "failed to read opened_sockets"
+    closed_before=$(sysctl -n net.sdtp.closed_sockets) ||
+        atf_fail "failed to read closed_sockets"
+    destroyed_before=$(sysctl -n net.sdtp.destroyed_sockets) ||
+        atf_fail "failed to read destroyed_sockets"
+
+    atf_check -s exit:0 -o empty -e empty \
+        "$(atf_get_srcdir)/sdtp_test_close"
+
+    opened_after=$(sysctl -n net.sdtp.opened_sockets) ||
+        atf_fail "failed to read opened_sockets"
+    closed_after=$(sysctl -n net.sdtp.closed_sockets) ||
+        atf_fail "failed to read closed_sockets"
+    destroyed_after=$(sysctl -n net.sdtp.destroyed_sockets) ||
+        atf_fail "failed to read destroyed_sockets"
+
+    atf_check_equal "$((opened_before + CLOSE_TEST_SOCKET_COUNT))" \
+        "${opened_after}"
+    atf_check_equal "$((closed_before + CLOSE_TEST_SOCKET_COUNT))" \
+        "${closed_after}"
+    atf_check_equal "$((destroyed_before + CLOSE_TEST_SOCKET_COUNT))" \
+        "${destroyed_after}"
+}
+
 atf_init_test_cases()
 {
     atf_add_test_case small_v4
     atf_add_test_case medium_v4
     atf_add_test_case large_v4
     atf_add_test_case ipv6_unsupported
+    atf_add_test_case close_detach
 }
