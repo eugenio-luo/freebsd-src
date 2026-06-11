@@ -221,9 +221,9 @@ void sdtp_pool_free_packet_tailq_entry(struct sdtp_packet_tailq_entry *entry);
 struct sdtp_ctx *sdtp_pool_alloc_ctx(void);
 void sdtp_pool_free_ctx(struct sdtp_ctx *ctx);
 
-#define SDTP_METRIC(PCB, FIELD, VAL)                               \
+#define SDTP_METRIC(S, FIELD, VAL)                                 \
 	do {                                                       \
-		atomic_add_64(&((PCB)->sdtp->metrics.FIELD), VAL); \
+		atomic_add_64(&((S)->metrics.FIELD), VAL); \
 	} while (0)
 
 VNET_DECLARE(struct inpcbinfo, sdtp_pcbinfo);

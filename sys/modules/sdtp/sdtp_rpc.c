@@ -87,7 +87,7 @@ sdtp_rpc_zone_get(struct sdtp_inpcb *pcb)
 	struct sdtp_rpc *rpc = SDTP_ZONE_GET(zones.sdtp_zone_rpc,
 	    struct sdtp_rpc);
 	if (rpc) {
-		SDTP_METRIC(pcb, allocated_rpcs_atomic, 1);
+		SDTP_METRIC(pcb->sdtp, allocated_rpcs_atomic, 1);
 	}
 	return rpc;
 }
@@ -96,7 +96,7 @@ static inline void
 sdtp_rpc_zone_free(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc)
 {
 	SDTP_ZONE_FREE(zones.sdtp_zone_rpc, rpc);
-	SDTP_METRIC(pcb, freed_rpcs_atomic, 1);
+	SDTP_METRIC(pcb->sdtp, freed_rpcs_atomic, 1);
 }
 
 /*
@@ -784,14 +784,14 @@ sdtp_rpc_reap(struct sdtp_inpcb *pcb, bool reap_all)
 			m_freem(out_pkts[i]->data);
 			SDTP_ZONE_FREE(zones.sdtp_zone_packet_slist_entry,
 			    out_pkts[i]);
-			SDTP_METRIC(pcb, freed_send_pkts_atomic, 1);
+			SDTP_METRIC(pcb->sdtp, freed_send_pkts_atomic, 1);
 		}
 
 		sdtp_pcb_debug(pcb, "reap %d in packets", num_in_pkts);
 		for (int i = 0; i < num_in_pkts; ++i) {
 			m_freem(in_pkts[i]->data);
 			sdtp_pool_free_packet_tailq_entry(in_pkts[i]);
-			SDTP_METRIC(pcb, freed_recv_pkts_atomic, 1);
+			SDTP_METRIC(pcb->sdtp, freed_recv_pkts_atomic, 1);
 		}
 
 		sdtp_pcb_debug(pcb, "reap %d rpcs", num_rpcs);
@@ -1082,7 +1082,7 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source,
 	}
 
 	sdtp_debug_print_pcb_rpcs(pcb, rpc);
-	SDTP_METRIC(pcb, received_pkts[header->type - SDTP_DATA], 1);
+	SDTP_METRIC(pcb->sdtp, received_pkts[header->type - SDTP_DATA], 1);
 
 	switch (header->type) {
 	case SDTP_DATA: {

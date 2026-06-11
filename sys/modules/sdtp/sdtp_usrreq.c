@@ -276,14 +276,14 @@ __sdtp_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc, struct mbuf *bufs[MAX
 
 		KASSERT(uio->uio_resid == 0 || rem == 0, ("uio_resid (%zd) or rem (%d) must be 0",
 			uio->uio_resid, rem));
-		SDTP_METRIC(rpc->sdtpcb, recv_pkts_atomic, 1);
+		SDTP_METRIC(rpc->sdtpcb->sdtp, recv_pkts_atomic, 1);
 	}
 
 	for (int i = 0; i < n; ++i) {
 		// TODO: buffer should be free'd here?
 		// TODO: sdtp_handle_acks(rpc, bufs[i]);
 		sdtp_free_mbuf(bufs[i]);
-		SDTP_METRIC(rpc->sdtpcb, freed_recv_pkts_atomic, 1);
+		SDTP_METRIC(rpc->sdtpcb->sdtp, freed_recv_pkts_atomic, 1);
 	}
 
 	sdtp_rpc_lock(rpc);
@@ -449,13 +449,13 @@ __sdtp_ctx_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc, struct sdtp_packe
 	KASSERT(uio->uio_resid == 0 || (rem == 0 && m == NULL),
 		("uio_resid (%zd) or (rem (%d) must be 0 and m must be NULL)",
 		uio->uio_resid, rem));
-	// SDTP_METRIC(rpc->sdtpcb, recv_pkts_atomic, 1);
+	// SDTP_METRIC(rpc->sdtpcb->sdtp, recv_pkts_atomic, 1);
 
 __sdtp_ctx_copy_to_user_out:
 	// TODO: buffer should be free'd here?
 	// TODO: sdtp_handle_acks(rpc, bufs[i]);
 	sdtp_free_mbuf(entries[0]->data);
-	// SDTP_METRIC(rpc->sdtpcb, freed_recv_pkts_atomic, 1);
+	// SDTP_METRIC(rpc->sdtpcb->sdtp, freed_recv_pkts_atomic, 1);
 
 	sdtp_rpc_lock(rpc);
 	atomic_clear_32(&rpc->flags_atomic, RPC_COPYING_TO_USER);
@@ -644,7 +644,7 @@ sdtp_wait_for_message(struct sdtp_inpcb *pcb, int flags, uint64_t id,
 			    "rpc->msgin.copied_out: %d, rpc->msgin.total_length: %d",
 			    rpc->msgin.copied_out, rpc->msgin.total_length);
 			if (rpc->msgin.copied_out == rpc->msgin.total_length) {
-				SDTP_METRIC(rpc->sdtpcb, recv_rpcs_atomic, 1);
+				SDTP_METRIC(rpc->sdtpcb->sdtp, recv_rpcs_atomic, 1);
 				goto sdtp_wait_for_message_done;
 			}
 			sdtp_rpc_put(rpc);
