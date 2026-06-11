@@ -400,9 +400,11 @@ sdtp_new_server_rpc(struct sdtp_data_header *header,
 	}
 
 	sdtp_pcb_debug(pcb, "creating new server rpc");
+	sdtp_pcb_unlock(pcb);
 
 	rpc = sdtp_rpc_zone_get(pcb);
 	if (!rpc) {
+		sdtp_pcb_lock(pcb);
 		error = ENOMEM;
 		sdtp_pcb_debug(pcb, "not enough memory for new server rpc");
 		goto sdtp_new_server_rpc_error;
@@ -422,7 +424,6 @@ sdtp_new_server_rpc(struct sdtp_data_header *header,
 
 	sdtp_pcb_lock(pcb);
 	if (pcb->shutdown) {
-		sdtp_pcb_unlock(pcb);
 		error = ESHUTDOWN;
 		goto sdtp_new_server_rpc_error;
 	}
@@ -445,7 +446,6 @@ sdtp_new_server_rpc(struct sdtp_data_header *header,
 		}
 	}
 
-	sdtp_pcb_unlock(pcb);
 	return SDTP_MAKE_EXPECTED(struct sdtp_expected_rpc_ptr, rpc);
 
 sdtp_new_server_rpc_error:
@@ -664,9 +664,7 @@ sdtp_data_packet(struct sdtp *sdtp, struct mbuf *m, struct sdtp_rpc *rpc,
 		    || sdtp_ctx_record_complete(rpc)) {
 
 			atomic_set_32(&rpc->flags_atomic, RPC_PKTS_READY);
-			sdtp_pcb_lock(pcb);
 			sdtp_handoff_rpc(pcb, rpc);
-			sdtp_pcb_unlock(pcb);
 		}
 	}
 
@@ -843,6 +841,7 @@ sdtp_get_rpc(struct sdtp_inpcb *pcb, struct sdtp_common_header *header,
 			VALID_RPC_ASSERT(SDTP_GET_VAL(expected_rpc));
 			RPC_LOCK_OWNED(SDTP_GET_VAL(expected_rpc));
 		}
+		PCB_LOCK_OWNED(pcb);
 		return expected_rpc;
 	}
 
@@ -853,6 +852,7 @@ sdtp_get_rpc(struct sdtp_inpcb *pcb, struct sdtp_common_header *header,
 		VALID_RPC_ASSERT(rpc);
 		RPC_LOCK_OWNED(rpc);
 	}
+	PCB_LOCK_OWNED(pcb);
 	return SDTP_MAKE_EXPECTED(struct sdtp_expected_rpc_ptr, rpc);
 }
 
@@ -900,6 +900,7 @@ sdtp_need_ack_packet(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc,
 	uint64_t id = sdtp_local_id(header->sender_id_be);
 	int error = 0;
 
+	sdtp_pcb_unlock(pcb);
 	if (rpc != NULL &&
 	    (rpc->state != SDTP_RPC_INCOMING ||
 		rpc->msgin.bytes_remaining > 0)) {
@@ -913,6 +914,7 @@ sdtp_need_ack_packet(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc,
 		if (peer == NULL || error != 0) {
 			sdtp_pcb_debug(pcb, "need_ack: failed to find peer: %d",
 			    error);
+			sdtp_pcb_lock(pcb);
 			return;
 		}
 	}
@@ -934,6 +936,7 @@ sdtp_need_ack_packet(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc,
 	if (rpc) {
 		sdtp_rpc_lock(rpc);
 	}
+	sdtp_pcb_lock(pcb);
 }
 
 static void
@@ -976,7 +979,9 @@ sdtp_resend_packet(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc,
 
 	if (rpc == NULL) {
 		sdtp_pcb_debug(pcb, "resend_packet: unknown rpc");
+		sdtp_pcb_unlock(pcb);
 		sdtp_send_unknown(pcb, &header->common, source);
+		sdtp_pcb_lock(pcb);
 		return;
 	}
 
@@ -993,6 +998,7 @@ sdtp_resend_packet(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc,
 	{
 		sdtp_pcb_debug(pcb, "resend_packet: send busy");
 		// TODO: fix this horrible locking
+		sdtp_pcb_unlock(pcb);
 		if (rpc) {
 			sdtp_rpc_unlock(rpc);
 		}
@@ -1000,6 +1006,7 @@ sdtp_resend_packet(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc,
 		if (rpc) {
 			sdtp_rpc_lock(rpc);
 		}
+		sdtp_pcb_lock(pcb);
 		return;
 	}
 
@@ -1007,6 +1014,7 @@ sdtp_resend_packet(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc,
 	    offset, end);
 
 	// TODO: fix this horrible locking
+	sdtp_pcb_unlock(pcb);
 	if (rpc) {
 		sdtp_rpc_unlock(rpc);
 	}
@@ -1014,6 +1022,7 @@ sdtp_resend_packet(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc,
 	if (rpc) {
 		sdtp_rpc_lock(rpc);
 	}
+	sdtp_pcb_lock(pcb);
 }
 
 static void
@@ -1044,6 +1053,7 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source,
 	MBUF_LEN_AT_LEAST(m, sizeof(struct sdtp_common_header) + pcb->iphlen);
 	KASSERT(m->m_flags & M_PKTHDR, ("mbuf must be a header mbuf"));
 	VALID_PCB_ASSERT(pcb);
+	PCB_LOCK_OWNED(pcb);
 	KASSERT(source != NULL, ("source must be valid"));
 
 	struct sdtp_common_header *header = SDTP_MTOD(m, struct sdtp_common_header *, pcb->iphlen);
@@ -1129,13 +1139,14 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source,
 		sdtp_rpc_put(rpc);
 		sdtp_rpc_unlock(rpc);
 	}
-	if (!consumed) {
-		sdtp_free_mbuf(m);
-	}
 	if (pcb->dead_bufs >= 2 * pcb->sdtp->dead_buffs_limit) {
 		sdtp_rpc_reap(pcb, /* reap_all */ false);
 	}
 
+	sdtp_pcb_unlock(pcb);
+	if (!consumed) {
+		sdtp_free_mbuf(m);
+	}
 	return;
 
 sdtp_handle_packet_error:
@@ -1143,6 +1154,7 @@ sdtp_handle_packet_error:
 		sdtp_rpc_put(rpc);
 		sdtp_rpc_unlock(rpc);
 	}
+	sdtp_pcb_unlock(pcb);
 	sdtp_free_mbuf(m);
 }
 

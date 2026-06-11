@@ -63,11 +63,15 @@ sdtp_get_pcb(struct sdtp *sdtp_struct,
 
 	mtx_lock_spin(&sdtp_struct->port_map.write_spinlock);
 	pcb = sdtp_find_inpcb(&sdtp_struct->port_map, dport);
+	if (pcb == NULL) {
+		mtx_unlock_spin(&sdtp_struct->port_map.write_spinlock);
+		return (NULL);
+	}
+	sdtp_pcb_lock(pcb);
 	mtx_unlock_spin(&sdtp_struct->port_map.write_spinlock);
 
-	if (pcb == NULL || sdtp_so(pcb) == NULL
-		|| pcb->iphlen != offset) {
-
+	if (sdtp_so(pcb) == NULL || pcb->iphlen != offset) {
+		sdtp_pcb_unlock(pcb);
 		return (NULL);
 	}
 
@@ -130,12 +134,14 @@ sdtp_input(struct mbuf **mp, int *offp, int proto)
 		goto sdtp_input_done;
 	}
 
+	sdtp_pcb_unlock(pcb);
 	/* We want to guarantee that the entire header is accessible */
 	if ((m = m_pullup(m, *offp + sdtp_header_lengths[header->type - SDTP_DATA])) ==
 	    NULL) {
 		sdtp_debug("%s: failed pullup typed header", __func__);
 		goto sdtp_input_done;
 	}
+	sdtp_pcb_lock(pcb);
 
 	sdtp_handle_packet(m, &src_addr, pcb);
 
