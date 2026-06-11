@@ -47,6 +47,7 @@ run_ping_pong_case()
 {
     size="$1"
     count="$2"
+    tls="$3"
 
     require_tools
     cleanup_state
@@ -60,6 +61,15 @@ run_ping_pong_case()
     # TODO: We want someway to load it automatically
     kldstat -n sdtp >/dev/null 2>&1 || atf_skip "sdtp module is not loaded"
     kldstat -n if_epair >/dev/null 2>&1 || atf_skip "if_epair module is not loaded"
+
+    tls_flag=""
+    if [ "$tls" = "tls" ]; then
+        atf_require_prog sysctl
+        ktls_enabled=$(sysctl -n kern.ipc.tls.enable 2>/dev/null) ||
+            atf_skip "kernel does not support TLS offload"
+        [ "$ktls_enabled" -ne 0 ] || atf_skip "Kernel TLS is disabled"
+        tls_flag="-T"
+    fi
 
     payload=$(make_payload "$size") || atf_fail "failed to build ${size}-byte payload"
     [ "${#payload}" -eq "$size" ] || atf_fail "payload size mismatch"
@@ -80,7 +90,7 @@ run_ping_pong_case()
     jexec sdtp_b ifconfig "${b}" inet 192.0.2.2/24 up || atf_fail "failed to configure ${b}"
 
     jexec sdtp_b "$(atf_get_srcdir)/sdtp_test_recv" \
-        -a 192.0.2.2 -p 9000 -n "$count" -q \
+        -a 192.0.2.2 -p 9000 -n "$count" -q $tls_flag \
         > "${HOME}/recv.out" 2>&1 &
     recv_pid=$!
 
@@ -88,7 +98,7 @@ run_ping_pong_case()
 
     atf_check -s exit:0 -o save:"${HOME}/send.out" -e save:"${HOME}/send.err" \
         jexec sdtp_a "$(atf_get_srcdir)/sdtp_test_send" \
-            -a 192.0.2.2 -p 9000 -n "$count" -m "$payload"
+            -a 192.0.2.2 -p 9000 -n "$count" -m "$payload" $tls_flag
 
     wait "$recv_pid" || atf_fail "receiver exited with failure"
 
@@ -109,7 +119,7 @@ small_v4_head()
 }
 small_v4_body()
 {
-    run_ping_pong_case 32 "$COUNT"
+    run_ping_pong_case 32 "$COUNT" plain
 }
 small_v4_cleanup()
 {
@@ -125,7 +135,7 @@ medium_v4_head()
 }
 medium_v4_body()
 {
-    run_ping_pong_case 1024 "$COUNT"
+    run_ping_pong_case 1024 "$COUNT" plain
 }
 medium_v4_cleanup()
 {
@@ -141,9 +151,57 @@ large_v4_head()
 }
 large_v4_body()
 {
-    run_ping_pong_case 8192 "$COUNT"
+    run_ping_pong_case 8192 "$COUNT" plain
 }
 large_v4_cleanup()
+{
+    dump_logs_on_failure
+    cleanup_state
+}
+
+atf_test_case small_tls_v4 cleanup
+small_tls_v4_head()
+{
+    common_head
+    atf_set "descr" "TLS-encrypted SDTP ping-pong with 32-byte payloads"
+}
+small_tls_v4_body()
+{
+    run_ping_pong_case 32 "$COUNT" tls
+}
+small_tls_v4_cleanup()
+{
+    dump_logs_on_failure
+    cleanup_state
+}
+
+atf_test_case medium_tls_v4 cleanup
+medium_tls_v4_head()
+{
+    common_head
+    atf_set "descr" "TLS-encrypted SDTP ping-pong with 1024-byte payloads"
+}
+medium_tls_v4_body()
+{
+    run_ping_pong_case 1024 "$COUNT" tls
+}
+medium_tls_v4_cleanup()
+{
+    dump_logs_on_failure
+    cleanup_state
+}
+
+atf_test_case large_tls_v4 cleanup
+large_tls_v4_head()
+{
+    common_head
+    atf_set "descr" "TLS-encrypted SDTP ping-pong with 8192-byte payloads"
+}
+large_tls_v4_body()
+{
+    run_ping_pong_case 8192 "$COUNT" tls
+}
+large_tls_v4_cleanup()
 {
     dump_logs_on_failure
     cleanup_state
@@ -209,6 +267,9 @@ atf_init_test_cases()
     atf_add_test_case small_v4
     atf_add_test_case medium_v4
     atf_add_test_case large_v4
+    atf_add_test_case small_tls_v4
+    atf_add_test_case medium_tls_v4
+    atf_add_test_case large_tls_v4
     atf_add_test_case ipv6_unsupported
     atf_add_test_case close_detach
 }

@@ -12,7 +12,8 @@
 #include <string.h>
 #include <unistd.h>
 
-#define IPPROTO_SDTP		146
+#include "sdtp_test_tls.h"
+
 #define SDTP_CMSG_TYPE		1
 
 #define SDTP_MAX_MESSAGE_LENGTH 1000000
@@ -54,11 +55,12 @@ static void
 usage(const char *prog)
 {
 	fprintf(stderr,
-	    "Usage: %s -a <bind_ip> -p <port> [-n count] [-q]\n"
+	    "Usage: %s -a <bind_ip> -p <port> [-n count] [-q] [-T]\n"
 	    "  -a bind IPv4 address\n"
 	    "  -p bind port\n"
 	    "  -n number of request/response exchanges (default 1)\n"
-	    "  -q quiet (do not print payloads)\n",
+	    "  -q quiet (do not print payloads)\n"
+	    "  -T enable TLS encryption using test keys\n",
 	    prog);
 }
 
@@ -117,6 +119,7 @@ main(int argc, char **argv)
 	int fd;
 	int exchanges;
 	int quiet;
+	int tls;
 	uint16_t port;
 	char *bind_ip;
 	struct sockaddr_in local;
@@ -124,10 +127,11 @@ main(int argc, char **argv)
 	fd = -1;
 	exchanges = 1;
 	quiet = 0;
+	tls = 0;
 	port = 0;
 	bind_ip = NULL;
 
-	while ((ch = getopt(argc, argv, "a:p:n:q")) != -1) {
+	while ((ch = getopt(argc, argv, "a:p:n:qT")) != -1) {
 		switch (ch) {
 		case 'a':
 			bind_ip = optarg;
@@ -146,6 +150,9 @@ main(int argc, char **argv)
 			break;
 		case 'q':
 			quiet = 1;
+			break;
+		case 'T':
+			tls = 1;
 			break;
 		default:
 			usage(argv[0]);
@@ -175,6 +182,10 @@ main(int argc, char **argv)
 
 	if (bind(fd, (struct sockaddr *)&local, sizeof(local)) < 0) {
 		perror("bind");
+		close(fd);
+		return (1);
+	}
+	if (tls && sdtp_enable_test_tls(fd, true) != 0) {
 		close(fd);
 		return (1);
 	}

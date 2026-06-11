@@ -13,7 +13,8 @@
 #include <string.h>
 #include <unistd.h>
 
-#define IPPROTO_SDTP		146
+#include "sdtp_test_tls.h"
+
 #define SDTP_CMSG_TYPE		1
 
 #define SDTP_MAX_MESSAGE_LENGTH 1000000
@@ -57,7 +58,7 @@ usage(const char *prog)
 	fprintf(stderr,
 	    "Usage: %s -a <peer_ip> -p <peer_port> -m <message> "
 	    "[-b <bind_ip>] [-l <local_port>] [-c cookie] [-t timeout_secs] "
-	    "[-n count] [-q]\n"
+	    "[-n count] [-q] [-T]\n"
 	    "  -a peer IPv4 address\n"
 	    "  -p peer port\n"
 	    "  -m request payload\n"
@@ -66,7 +67,8 @@ usage(const char *prog)
 	    "  -c completion cookie base (default 1)\n"
 	    "  -t receive timeout in seconds (default 5)\n"
 	    "  -n number of request/response exchanges (default 1)\n"
-	    "  -q quiet (do not print response payloads)\n",
+	    "  -q quiet (do not print response payloads)\n"
+	    "  -T enable TLS encryption using test keys\n",
 	    prog);
 }
 
@@ -246,6 +248,7 @@ main(int argc, char **argv)
 	int ch;
 	int fd;
 	int quiet;
+	int tls;
 	int timeout_secs;
 	int count;
 	uint16_t peer_port;
@@ -259,6 +262,7 @@ main(int argc, char **argv)
 
 	fd = -1;
 	quiet = 0;
+	tls = 0;
 	timeout_secs = 5;
 	count = 1;
 	peer_port = 0;
@@ -268,7 +272,7 @@ main(int argc, char **argv)
 	bind_ip = "0.0.0.0";
 	message = NULL;
 
-	while ((ch = getopt(argc, argv, "a:p:m:b:l:c:t:n:q")) != -1) {
+	while ((ch = getopt(argc, argv, "a:p:m:b:l:c:t:n:qT")) != -1) {
 		switch (ch) {
 		case 'a':
 			peer_ip = optarg;
@@ -317,6 +321,9 @@ main(int argc, char **argv)
 		case 'q':
 			quiet = 1;
 			break;
+		case 'T':
+			tls = 1;
+			break;
 		default:
 			usage(argv[0]);
 			return (2);
@@ -358,6 +365,10 @@ main(int argc, char **argv)
 
 	if (bind(fd, (struct sockaddr *)&local, sizeof(local)) < 0) {
 		perror("bind");
+		close(fd);
+		return (1);
+	}
+	if (tls && sdtp_enable_test_tls(fd, false) != 0) {
 		close(fd);
 		return (1);
 	}
