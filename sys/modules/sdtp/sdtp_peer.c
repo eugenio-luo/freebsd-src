@@ -80,9 +80,9 @@ sdtp_resolve_nh(struct in6_addr *addr, int *error)
 
 	if (IN6_IS_ADDR_V4MAPPED(addr)) {
 		ipv6_to_ipv4(addr, &tmp);
-		nh = fib4_lookup(RT_DEFAULT_FIB, tmp, 0, NHR_NONE, 0);
+		nh = fib4_lookup(RT_DEFAULT_FIB, tmp, 0, NHR_REF, 0);
 	} else {
-		nh = fib6_lookup(RT_DEFAULT_FIB, addr, 0, NHR_NONE, 0);
+		nh = fib6_lookup(RT_DEFAULT_FIB, addr, 0, NHR_REF, 0);
 	}
 
 	if (nh == NULL) {
