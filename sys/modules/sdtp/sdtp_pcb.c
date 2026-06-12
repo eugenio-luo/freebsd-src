@@ -278,6 +278,7 @@ sdtp_pcb_free(struct sdtp_inpcb *pcb)
 		++i;
 	}
 
+	sdtp_ctx_map_destroy(pcb);
 	mtx_destroy(&pcb->spinlock);
 	SDTP_QUEUE_FREE(&pcb->active_rpcs);
 	SDTP_QUEUE_FREE(&pcb->dead_rpcs);

@@ -93,6 +93,7 @@ struct sdtp_rx_logical_info {
 
 int sdtp_rpc_ctx_init(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc);
 int sdtp_ctx_enable(struct sdtp_inpcb *pcb, struct sockopt *sopt, bool is_tx);
+void sdtp_ctx_map_destroy(struct sdtp_inpcb *pcb);
 void sdtp_free_ctx(struct sdtp_ctx *ctx);
 struct sdtp_rx_logical_info sdtp_calc_rx_logical_info(struct sdtp_rpc *rpc, struct mbuf *m);
 bool sdtp_ctx_record_complete(struct sdtp_rpc *rpc);

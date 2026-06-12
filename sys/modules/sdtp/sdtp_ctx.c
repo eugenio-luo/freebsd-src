@@ -158,6 +158,37 @@ sdtp_free_ctx(struct sdtp_ctx *ctx)
 	sdtp_pool_free_ctx(ctx);
 }
 
+void
+sdtp_ctx_map_destroy(struct sdtp_inpcb *pcb)
+{
+	struct sdtp_ctx *ctx, *tmp;
+	struct sdtp_ctx *reuse_ctx;
+
+	VALID_PCB_ASSERT(pcb);
+	KASSERT(pcb->shutdown, ("%s: PCB must be shut down", __func__));
+
+	reuse_ctx = pcb->ctx_map.reuse_ctx;
+	pcb->ctx_map.reuse_ctx = NULL;
+	pcb->ctx_map.active = false;
+	for (int i = 0; i < SDTP_SERVER_RPC_BUCKETS; ++i) {
+		LIST_FOREACH_SAFE(ctx, &pcb->ctx_map.buckets[i], hash_links,
+		    tmp) {
+			if (ctx == reuse_ctx) {
+				continue;
+			}
+			KASSERT(refcount_load(&ctx->refs) == 1,
+			    ("%s: context still has users", __func__));
+			sdtp_ctx_put(ctx);
+		}
+	}
+	if (reuse_ctx != NULL) {
+		KASSERT(refcount_load(&reuse_ctx->refs) == 2,
+		    ("%s: reuse context still has users", __func__));
+		sdtp_ctx_put(reuse_ctx);
+		sdtp_ctx_put(reuse_ctx);
+	}
+}
+
 /*
  * This is a shallow clone, ktls_session won't be cloned,
  * instead it will be lazily created when it will be used.
