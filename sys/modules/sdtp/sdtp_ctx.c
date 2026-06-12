@@ -1012,6 +1012,7 @@ sdtp_tls_fill_packets(struct sdtp_rpc *rpc, struct uio *uio, int max_packet_size
 		sdtp_rpc_unlock(rpc);
 		error = sdtp_tls_allocate_packet_mbuf(&pktm, rpc, pkt_size, 0, i);
 		if (error != 0) {
+			sdtp_rpc_lock(rpc);
 			goto sdtp_tls_fill_packets_out;
 		}
 
