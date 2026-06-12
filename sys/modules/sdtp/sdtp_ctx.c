@@ -237,10 +237,10 @@ sdtp_rpc_ctx_init(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc)
 
 	ctx = sdtp_find_ctx(pcb, addr_be, port_be);
 	if (ctx == NULL) {
-	        ctx = sdtp_clone_reuse_ctx(pcb, addr_be, port_be, &error);
-	        if (ctx == NULL) {
-	                return (error);
-	        }
+		ctx = sdtp_clone_reuse_ctx(pcb, addr_be, port_be, &error);
+		if (ctx == NULL) {
+			return (error);
+		}
 	}
 
 	KASSERT(NH_IS_VALID(rpc->peer->nh), ("nh must be valid"));
