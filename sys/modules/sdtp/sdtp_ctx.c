@@ -1018,23 +1018,25 @@ sdtp_tls_fill_packets(struct sdtp_rpc *rpc, struct uio *uio, int max_packet_size
 
 		sdtp_tls_fill_iov(&iov[i], pktm, payload_start, iov_len);
 
-		error = sdtp_packet_insert_list(rpc, pktm, &prev);
-		if (error != 0) {
-			sdtp_free_mbuf(pktm);
-			goto sdtp_tls_fill_packets_out;
-		}
-
 		// 2. Fill mbuf with [ offset #i ][ payload #i ] where i \in [0, nsegs).
 
 		sdtp_extpg_copyin_offset(m, payload_off, data_off);
 
 		if (data_len != 0) {
+			RPC_LOCK_NOTOWNED(rpc);
 			error = m_unmapped_uiomove(m, payload_off + rsizes.seg, uio, data_len);
 			sdtp_rpc_debug(rpc, "copied from uio %d bytes of data to offset %d", data_len, payload_off + rsizes.seg);
 			if (error != 0) {
 				sdtp_free_mbuf(pktm);
+				sdtp_rpc_lock(rpc);
 				goto sdtp_tls_fill_packets_out;
 			}
+		}
+
+		error = sdtp_packet_insert_list(rpc, pktm, &prev);
+		if (error != 0) {
+			sdtp_free_mbuf(pktm);
+			goto sdtp_tls_fill_packets_out;
 		}
 
 		data_off += data_len;
