@@ -267,7 +267,7 @@ sdtp_new_client_rpc(struct sdtp_inpcb *pcb, struct in6_addr *dest,
 	rpc->resend_timer_ticks = pcb->sdtp->timer_ticks;
 	rpc->magic = SDTP_RPC_MAGIC;
 	rpc->start_cycles = get_cyclecount();
-	refcount_init(&rpc->refs, 0);
+	refcount_init(&rpc->refs, 1);
 
 	sdtp_pcb_lock(pcb);
 	if (pcb->shutdown) {
