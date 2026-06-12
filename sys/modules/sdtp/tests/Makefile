@@ -8,6 +8,8 @@ PROGS+= sdtp_test_recv
 PROGS+= sdtp_test_ipv6
 PROGS+= sdtp_test_close
 
+LIBADD.sdtp_test_send= pthread
+
 CFLAGS+= -I${SRCTOP}/sys
 CFLAGS+= -I${SRCTOP}/sys/modules/sdtp
 

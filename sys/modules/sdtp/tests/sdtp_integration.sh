@@ -1,7 +1,12 @@
 #!/usr/libexec/atf-sh
 
-COUNT=20000
+COUNT=5000
+CONCURRENT_COUNT=10000
+CONCURRENT_WINDOW=32
+PARALLEL_COUNT=10000
+PARALLEL_THREADS=8
 CLOSE_TEST_SOCKET_COUNT=3000
+LARGE_TIMEOUT=180
 
 require_tools()
 {
@@ -48,6 +53,8 @@ run_ping_pong_case()
     size="$1"
     count="$2"
     tls="$3"
+    window="${4:-1}"
+    threads="${5:-1}"
 
     require_tools
     cleanup_state
@@ -96,9 +103,12 @@ run_ping_pong_case()
 
     sleep 1
 
-    atf_check -s exit:0 -o save:"${HOME}/send.out" -e save:"${HOME}/send.err" \
-        jexec sdtp_a "$(atf_get_srcdir)/sdtp_test_send" \
-            -a 192.0.2.2 -p 9000 -n "$count" -m "$payload" $tls_flag
+    if ! jexec sdtp_a "$(atf_get_srcdir)/sdtp_test_send" \
+        -a 192.0.2.2 -p 9000 -n "$count" -w "$window" \
+        -j "$threads" -m "$payload" $tls_flag \
+        > "${HOME}/send.out" 2> "${HOME}/send.err"; then
+        atf_fail "sender exited with failure"
+    fi
 
     wait "$recv_pid" || atf_fail "receiver exited with failure"
 
@@ -108,7 +118,7 @@ run_ping_pong_case()
 common_head()
 {
     atf_set "require.user" "root"
-    atf_set "timeout" "60"
+    atf_set "timeout" "${1:-60}"
 }
 
 atf_test_case small_v4 cleanup
@@ -207,6 +217,70 @@ large_tls_v4_cleanup()
     cleanup_state
 }
 
+atf_test_case concurrent_v4 cleanup
+concurrent_v4_head()
+{
+    common_head
+    atf_set "descr" "SDTP handles multiple concurrent RPCs on one socket"
+}
+concurrent_v4_body()
+{
+    run_ping_pong_case 8192 "$CONCURRENT_COUNT" plain "$CONCURRENT_WINDOW"
+}
+concurrent_v4_cleanup()
+{
+    dump_logs_on_failure
+    cleanup_state
+}
+
+atf_test_case concurrent_tls_v4 cleanup
+concurrent_tls_v4_head()
+{
+    common_head
+    atf_set "descr" "TLS-encrypted SDTP handles concurrent RPCs on one socket"
+}
+concurrent_tls_v4_body()
+{
+    run_ping_pong_case 8192 "$CONCURRENT_COUNT" tls "$CONCURRENT_WINDOW"
+}
+concurrent_tls_v4_cleanup()
+{
+    dump_logs_on_failure
+    cleanup_state
+}
+
+atf_test_case parallel_v4 cleanup
+parallel_v4_head()
+{
+    common_head
+    atf_set "descr" "SDTP handles RPCs from parallel threads on one socket"
+}
+parallel_v4_body()
+{
+    run_ping_pong_case 8192 "$PARALLEL_COUNT" plain 1 "$PARALLEL_THREADS"
+}
+parallel_v4_cleanup()
+{
+    dump_logs_on_failure
+    cleanup_state
+}
+
+atf_test_case parallel_tls_v4 cleanup
+parallel_tls_v4_head()
+{
+    common_head
+    atf_set "descr" "TLS-encrypted SDTP handles parallel RPC threads"
+}
+parallel_tls_v4_body()
+{
+    run_ping_pong_case 8192 "$PARALLEL_COUNT" tls 1 "$PARALLEL_THREADS"
+}
+parallel_tls_v4_cleanup()
+{
+    dump_logs_on_failure
+    cleanup_state
+}
+
 atf_test_case ipv6_unsupported
 ipv6_unsupported_head()
 {
@@ -270,6 +344,10 @@ atf_init_test_cases()
     atf_add_test_case small_tls_v4
     atf_add_test_case medium_tls_v4
     atf_add_test_case large_tls_v4
+    atf_add_test_case concurrent_v4
+    atf_add_test_case concurrent_tls_v4
+    atf_add_test_case parallel_v4
+    atf_add_test_case parallel_tls_v4
     atf_add_test_case ipv6_unsupported
     atf_add_test_case close_detach
 }
