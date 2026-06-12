@@ -589,7 +589,7 @@ sdtp_message_out(struct sdtp_rpc *rpc, struct uio *uio, bool immediate_send)
 	//, overlap_xmit;
 	uint16_t mtu;
 
-	sdtp_debug_print_pcb_rpcs(rpc->sdtpcb, rpc);
+	// sdtp_debug_print_pcb_rpcs(rpc->sdtpcb, rpc);
 
 	sdtp_msgout_init(rpc, uio);
 
