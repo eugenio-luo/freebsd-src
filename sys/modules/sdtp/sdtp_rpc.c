@@ -277,7 +277,11 @@ sdtp_new_client_rpc(struct sdtp_inpcb *pcb, struct in6_addr *dest,
 	}
 
 	if (pcb->ctx_map.active) {
-		sdtp_rpc_ctx_init(pcb, rpc);
+		*error = sdtp_rpc_ctx_init(pcb, rpc);
+		if (*error != 0) {
+			sdtp_pcb_unlock(pcb);
+			goto sdtp_new_client_rpc_error;
+		}
 	}
 
 	SDTP_QUEUE_LOCK(&pcb->active_rpcs);
@@ -429,7 +433,10 @@ sdtp_new_server_rpc(struct sdtp_data_header *header,
 	}
 
 	if (pcb->ctx_map.active) {
-		sdtp_rpc_ctx_init(pcb, rpc);
+		error = sdtp_rpc_ctx_init(pcb, rpc);
+		if (error != 0) {
+			goto sdtp_new_server_rpc_error;
+		}
 	}
 
 	sdtp_lock_rpc_and_insert_pcb_list(pcb, rpc, id);
