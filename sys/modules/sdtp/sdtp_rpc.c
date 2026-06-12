@@ -1146,11 +1146,12 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source,
 		sdtp_rpc_put(rpc);
 		sdtp_rpc_unlock(rpc);
 	}
+	sdtp_pcb_unlock(pcb);
+
 	if (pcb->dead_bufs >= 2 * pcb->sdtp->dead_buffs_limit) {
 		sdtp_rpc_reap(pcb, /* reap_all */ false);
 	}
 
-	sdtp_pcb_unlock(pcb);
 	if (!consumed) {
 		sdtp_free_mbuf(m);
 	}
