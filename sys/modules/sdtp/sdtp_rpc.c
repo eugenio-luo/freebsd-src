@@ -95,6 +95,10 @@ sdtp_rpc_zone_get(struct sdtp_inpcb *pcb)
 static inline void
 sdtp_rpc_zone_free(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc)
 {
+	if (rpc->crypto.ctx != NULL) {
+		sdtp_ctx_put(rpc->crypto.ctx);
+		rpc->crypto.ctx = NULL;
+	}
 	SDTP_ZONE_FREE(zones.sdtp_zone_rpc, rpc);
 	SDTP_METRIC(pcb->sdtp, freed_rpcs_atomic, 1);
 }
