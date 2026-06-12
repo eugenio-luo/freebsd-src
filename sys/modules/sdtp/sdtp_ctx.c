@@ -732,7 +732,9 @@ sdtp_ctx_get_session(struct sdtp_rpc *rpc, bool is_tx)
 		// we dropped the lock, so we need to check again
 		state = (is_tx) ? &rpc->crypto.ctx->tx : &rpc->crypto.ctx->rx;
 		if (state->session != NULL) {
+			sdtp_rpc_unlock(rpc);
 			ktls_free(session);
+			sdtp_rpc_lock(rpc);
 			return (state->session);
 		}
 
