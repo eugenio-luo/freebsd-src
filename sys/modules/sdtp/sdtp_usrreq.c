@@ -411,47 +411,58 @@ __sdtp_ctx_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc, struct sdtp_packe
 	KASSERT(m->m_flags & M_PKTHDR, ("m must be a packet header"));
 
 	struct sdtp_rx_logical_info *rx_info = &entries[0]->rx_info;
-	int error = 0, seg_rem = 0, i = 0, rem;
+	int error = 0, offset, rem, pre_len, post_len;
 
 	atomic_set_32(&rpc->flags_atomic, RPC_COPYING_TO_USER);
 	sdtp_rpc_unlock(rpc);
 
+	pre_len = sdtp_pre_len(rpc);
+	post_len = sdtp_post_len(rpc);
 	rem = rx_info->record_data_len;
-	for (; m != NULL && uio->uio_resid > 0 && rem > 0; m = m->m_next) {
-		int pre_len = (m->m_flags & M_PKTHDR) ?
-			sizeof(struct tls_record_layer) + sizeof(uint64_t) : 0;
-		int post_len = (m->m_next == NULL) ? trailer_len : 0;
+	offset = pre_len;
+	for (int i = 0; i < n; ++i) {
+		int seg_rem = entries[i]->rx_info.length;
+		if (i == 0) {
+			seg_rem += trailer_len;
+		} else if (i == n - 1) {
+			seg_rem -= trailer_len;
+		}
 
-		MUST_NOT_NEGATIVE(seg_rem);
-		if (seg_rem == 0) {
-			KASSERT(i < n, ("i: %d must be less than n: %d", i, n));
-			seg_rem = entries[i]->rx_info.length;
-			if (i == 0) {
-				seg_rem += trailer_len;
-			} else if (i == n - 1) {
-				seg_rem -= trailer_len;
+		sdtp_rpc_debug(rpc, "seg_rem: %d, trailer_len: %d, pre_len: %d post_len: %d, offset: %d, rem: %d",
+			seg_rem, trailer_len, pre_len, post_len, offset, rem);
+
+		offset += sizeof(struct sdtp_data_segment);
+		while (seg_rem > 0 && m != NULL && uio->uio_resid > 0) {
+			int mlen = m->m_len;
+			if (m->m_next == NULL) {
+				mlen -= post_len;
 			}
-			pre_len += sizeof(uint32_t);
-			i++;
-		}
+			MUST_POSITIVE(mlen);
+			sdtp_rpc_debug(rpc, "mlen: %d, offset: %d, uio->uio_resid: %d, rem: %d, seg_rem: %d",
+		  mlen, offset, uio->uio_resid, rem, seg_rem);
 
-		int len = min(m->m_len - pre_len - post_len, uio->uio_resid);
-		len = min(len, rem);
-		MUST_POSITIVE(len);
-		error = uiomove(SDTP_MTOD(m, char *, pre_len), len, uio);
-		if (error) {
-			goto __sdtp_ctx_copy_to_user_out;
+			int len = min(mlen - offset, uio->uio_resid);
+			len = min(len, rem);
+			len = min(len, seg_rem);
+			MUST_POSITIVE(len);
+
+			error = uiomove(SDTP_MTOD(m, char *, offset), len, uio);
+			if (error) {
+				goto __sdtp_ctx_copy_to_user_out;
+			}
+
+			rem -= len;
+			seg_rem -= len;
+			offset += len;
+			KASSERT(offset <= mlen, ("offset must be less than mlen: %d < %d", offset, mlen));
+			if (mlen == offset) {
+				m = m->m_next;
+				offset = 0;
+			}
 		}
-		sdtp_rpc_debug(rpc, "copying %d length to userspace", len);
-		rem -= len;
-		seg_rem -= len;
-		sdtp_rpc_debug(rpc, "pre_len: %d, post_len: %d, len: %d, rem: %d, seg_rem: %d",
-				pre_len, post_len, len, rem, seg_rem);
 	}
 
-	KASSERT(uio->uio_resid == 0 || (rem == 0 && m == NULL),
-		("uio_resid (%zd) or (rem (%d) must be 0 and m must be NULL)",
-		uio->uio_resid, rem));
+	KASSERT(uio->uio_resid == 0 || rem == 0, ("uio_resid (%zd) or rem (%d) must be 0", uio->uio_resid, rem));
 	// SDTP_METRIC(rpc->sdtpcb->sdtp, recv_pkts_atomic, 1);
 
 __sdtp_ctx_copy_to_user_out:
