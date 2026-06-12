@@ -119,6 +119,9 @@ sdtp_get_ctx(struct sdtp_inpcb *pcb, uint32_t peer_addr_be, uint16_t peer_port_b
 			*error = ENOMEM;
 			return (NULL);
 		}
+		ctx->addr_be = peer_addr_be;
+		ctx->port_be = peer_port_be;
+		refcount_init(&ctx->refs, 1);
 		LIST_INSERT_HEAD(bucket, ctx, hash_links);
 		sdtp_ctx_hold(ctx);
 	}
@@ -180,8 +183,6 @@ sdtp_clone_reuse_ctx(struct sdtp_inpcb *pcb, uint32_t addr_be, uint16_t port_be,
 
 	ctx->tx = reuse_ctx->tx;
 	ctx->rx = reuse_ctx->rx;
-	ctx->addr_be = reuse_ctx->addr_be;
-	ctx->port_be = reuse_ctx->port_be;
 
 	if (ctx->tx.active) {
 		ctx->tx.copy = true;
