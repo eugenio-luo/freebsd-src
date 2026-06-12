@@ -472,7 +472,7 @@ sdtp_gso_offset(struct sdtp_data_header *header)
  * parameters because we don't have the guarantee that they are present.
  */
 
-static inline int
+int
 sdtp_pre_len(struct sdtp_rpc *rpc)
 {
 	VALID_RPC_ASSERT(rpc);
@@ -501,7 +501,7 @@ sdtp_pre_len(struct sdtp_rpc *rpc)
 	return (len);
 }
 
-static inline int
+int
 sdtp_post_len(struct sdtp_rpc *rpc)
 {
 	VALID_RPC_ASSERT(rpc);
