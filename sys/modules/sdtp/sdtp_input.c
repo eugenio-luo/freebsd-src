@@ -129,7 +129,7 @@ sdtp_input(struct mbuf **mp, int *offp, int proto)
 	}
 
 	if ((pcb = sdtp_get_pcb(sdtp, header, *offp)) == NULL) {
-		sdtp_debug("%s: can't find pcb", __func__);
+		sdtp_debug("%s: can't find pcb\n", __func__);
 		icmp_error(m, ICMP_UNREACH, ICMP_UNREACH_PORT, 0, 0);
 		goto sdtp_input_done;
 	}
