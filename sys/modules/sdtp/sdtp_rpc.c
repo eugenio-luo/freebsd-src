@@ -451,7 +451,11 @@ sdtp_new_server_rpc(struct sdtp_data_header *header,
 			sdtp_handoff_rpc(pcb, rpc);
 		}
 	} else {
-		if (ntohl(header->data_segment.offset_be) == 0) {
+		// Temporary solution, because we don't have memory pools,
+		// we can only handoff when the message is complete.
+
+		// if (ntohl(header->data_segment.offset_be) == 0) {
+		if (payload_size >= rpc->msgin.total_length) {
 			atomic_set_32(&rpc->flags_atomic, RPC_PKTS_READY);
 			sdtp_handoff_rpc(pcb, rpc);
 		}
@@ -671,8 +675,10 @@ sdtp_data_packet(struct sdtp *sdtp, struct mbuf *m, struct sdtp_rpc *rpc,
 	if (!TAILQ_EMPTY(&rpc->msgin.packets) &&
 		(!(atomic_load_32(&rpc->flags_atomic) & RPC_PKTS_READY))) {
 
-		if (!is_encrypted_rpc(rpc)
-		    || sdtp_ctx_record_complete(rpc)) {
+		// Temporary solution, because we don't have memory pools,
+		// we can only handoff when the message is complete.
+		if ((is_encrypted_rpc(rpc) && sdtp_ctx_record_complete(rpc))
+			|| (!is_encrypted_rpc(rpc) && rpc->msgin.bytes_remaining == 0)) {
 
 			atomic_set_32(&rpc->flags_atomic, RPC_PKTS_READY);
 			sdtp_handoff_rpc(pcb, rpc);
