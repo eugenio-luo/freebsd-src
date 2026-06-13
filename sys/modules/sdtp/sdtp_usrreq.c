@@ -271,6 +271,7 @@ __sdtp_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc, struct mbuf *bufs[MAX
 			if (error) {
 				break;
 			}
+			sdtp_rpc_debug(rpc, "uio->uio_resid: %d, len: %d, rem: %d\n", uio->uio_resid, len, rem);
 			rem -= len;
 		}
 		if (error) {
