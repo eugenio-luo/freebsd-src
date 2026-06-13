@@ -252,7 +252,7 @@ recv_one(int fd, int quiet, const char *expected_message,
 
 	if ((size_t)n != expected_len ||
 	    memcmp(data_buf, expected_message, expected_len) != 0) {
-		fprintf(stderr, "response payload mismatch\n");
+		fprintf(stderr, "response payload mismatch: %zd %zu\n", n, expected_len);
 		return (-1);
 	}
 
