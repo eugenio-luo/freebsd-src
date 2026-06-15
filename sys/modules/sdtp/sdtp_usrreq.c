@@ -787,12 +787,16 @@ sdtp_soreceive_done:
 
 		if (sdtp_is_client(rpc->id)) {
 			sdtp_peer_ack(rpc);
+			sdtp_pcb_lock(inp);
 			sdtp_rpc_free(rpc);
+			sdtp_pcb_unlock(inp);
 		} else {
 			if (res >= 0) {
 				rpc->state = SDTP_RPC_IN_SERVICE;
 			} else {
+				sdtp_pcb_lock(inp);
 				sdtp_rpc_free(rpc);
+				sdtp_pcb_unlock(inp);
 			}
 		}
 		sdtp_rpc_put(rpc);
@@ -948,7 +952,9 @@ sdtp_send_request(struct sdtp_inpcb *pcb, struct uio *uio,
 
 sdtp_send_request_error:
 	if (rpc) {
+		sdtp_pcb_lock(pcb);
 		sdtp_rpc_free(rpc);
+		sdtp_pcb_unlock(pcb);
 
 		sdtp_rpc_put(rpc);
 		sdtp_rpc_unlock(rpc);
@@ -1021,7 +1027,9 @@ sdtp_send_response(struct sdtp_inpcb *pcb, struct uio *uio,
 
 sdtp_send_response_error:
 	if (rpc != NULL) {
+		sdtp_pcb_lock(pcb);
 		sdtp_rpc_free(rpc);
+		sdtp_pcb_unlock(pcb);
 	}
 
 sdtp_send_response_error_no_free_rpc:
