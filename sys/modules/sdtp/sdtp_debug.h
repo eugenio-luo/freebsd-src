@@ -307,19 +307,20 @@ sdtp_debug_print_bucket_rpcs(struct sdtp_rpc_bucket *buckets, size_t size,
 #ifdef SDTP_DEBUG
 	for (int i = 0; i < size; ++i) {
 		struct sdtp_rpc *rpc;
-		struct sdtp_rpc_mlist *rpcs = &buckets[i].rpcs;
+		struct sdtp_rpc_list *rpcs = &buckets[i].rpcs;
 
-		if (!owned_rpc || owned_rpc->spinlock_p != &rpcs->spinlock) {
-			SDTP_LIST_LOCK(rpcs);
+		if (!owned_rpc ||
+		    owned_rpc->spinlock_p != &buckets[i].spinlock) {
+			mtx_lock_spin(&buckets[i].spinlock);
 		}
-		SDTP_LIST_FOREACH_LOCKED(rpc, rpcs, hash_links)
-		{
+		LIST_FOREACH(rpc, rpcs, hash_links) {
 			sdtp_rpc_debug(rpc,
 			    "message in num bufs: %d, message out num bufs: %d",
 			    rpc->msgin.num_bufs, rpc->msgout.num_bufs);
 		}
-		if (!owned_rpc || owned_rpc->spinlock_p != &rpcs->spinlock) {
-			SDTP_LIST_UNLOCK(rpcs);
+		if (!owned_rpc ||
+		    owned_rpc->spinlock_p != &buckets[i].spinlock) {
+			mtx_unlock_spin(&buckets[i].spinlock);
 		}
 	}
 #endif

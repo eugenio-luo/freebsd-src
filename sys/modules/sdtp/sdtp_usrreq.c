@@ -109,11 +109,10 @@ sdtp_register_interest(struct sdtp_interest *interest, struct sdtp_inpcb *pcb,
 	atomic_store_int(&interest->locked_atomic, 0);
 	if (flags & SDTP_RECVMSG_RESPONSE) {
 		sdtp_pcb_debug(pcb, "Check if there are response RPCs");
-		if (!SDTP_LIST_EMPTY(&pcb->ready_responses)) {
+		if (!LIST_EMPTY(&pcb->ready_responses)) {
 			sdtp_pcb_debug(pcb,
 			    "There are response RPCs in PCB list");
-			ready_rpc = SDTP_LIST_FIRST(&pcb->ready_responses,
-			    sdtp_rpc);
+			ready_rpc = LIST_FIRST(&pcb->ready_responses);
 			goto sdtp_register_interest_claim_rpc;
 		}
 
@@ -121,11 +120,10 @@ sdtp_register_interest(struct sdtp_interest *interest, struct sdtp_inpcb *pcb,
 	}
 	if (flags & SDTP_RECVMSG_REQUEST) {
 		sdtp_pcb_debug(pcb, "Check if there are request RPCs");
-		if (!SDTP_LIST_EMPTY(&pcb->ready_requests)) {
+		if (!LIST_EMPTY(&pcb->ready_requests)) {
 			sdtp_pcb_debug(pcb,
 			    "There are request RPCs in PCB list");
-			ready_rpc = SDTP_LIST_FIRST(&pcb->ready_requests,
-			    sdtp_rpc);
+			ready_rpc = LIST_FIRST(&pcb->ready_requests);
 
 			if (atomic_load_int(&interest->is_response_atomic)) {
 				remove_response_interest(pcb, interest);
@@ -149,8 +147,8 @@ sdtp_register_interest_claim_rpc:
 	}
 
 	remove_ready_rpc(pcb, ready_rpc);
-	if (!SDTP_LIST_EMPTY(&pcb->ready_requests) ||
-	    !SDTP_LIST_EMPTY(&pcb->ready_responses)) {
+	if (!LIST_EMPTY(&pcb->ready_requests) ||
+	    !LIST_EMPTY(&pcb->ready_responses)) {
 		sdtp_sorwakeup(pcb);
 	}
 
@@ -789,16 +787,12 @@ sdtp_soreceive_done:
 
 		if (sdtp_is_client(rpc->id)) {
 			sdtp_peer_ack(rpc);
-			SDTP_QUEUE_LOCK(&rpc->sdtpcb->active_rpcs);
 			sdtp_rpc_free(rpc);
-			SDTP_QUEUE_UNLOCK(&rpc->sdtpcb->active_rpcs);
 		} else {
 			if (res >= 0) {
 				rpc->state = SDTP_RPC_IN_SERVICE;
 			} else {
-				SDTP_QUEUE_LOCK(&rpc->sdtpcb->active_rpcs);
 				sdtp_rpc_free(rpc);
-				SDTP_QUEUE_UNLOCK(&rpc->sdtpcb->active_rpcs);
 			}
 		}
 		sdtp_rpc_put(rpc);
@@ -954,9 +948,7 @@ sdtp_send_request(struct sdtp_inpcb *pcb, struct uio *uio,
 
 sdtp_send_request_error:
 	if (rpc) {
-		SDTP_QUEUE_LOCK(&pcb->active_rpcs);
 		sdtp_rpc_free(rpc);
-		SDTP_QUEUE_UNLOCK(&pcb->active_rpcs);
 
 		sdtp_rpc_put(rpc);
 		sdtp_rpc_unlock(rpc);
@@ -1029,9 +1021,7 @@ sdtp_send_response(struct sdtp_inpcb *pcb, struct uio *uio,
 
 sdtp_send_response_error:
 	if (rpc != NULL) {
-		SDTP_QUEUE_LOCK(&pcb->active_rpcs);
 		sdtp_rpc_free(rpc);
-		SDTP_QUEUE_UNLOCK(&pcb->active_rpcs);
 	}
 
 sdtp_send_response_error_no_free_rpc:

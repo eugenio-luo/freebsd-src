@@ -15,7 +15,6 @@
 #include "sdtp.h"
 #include "sdtp_common.h"
 #include "sdtp_pcb.h"
-#include "sdtp_queue.h"
 #include "sdtp_utils.h"
 #include "sdtp_ctx.h"
 
@@ -128,13 +127,13 @@ struct sdtp_rpc {
 	struct sdtp_message_in msgin;
 	struct sdtp_message_out msgout;
 
-	SDTP_LIST_ENTRY(struct sdtp_rpc_mlist, sdtp_rpc) hash_links;
+	LIST_ENTRY(sdtp_rpc) hash_links;
 
 	int is_ready_atomic;
 
-	SDTP_LIST_ENTRY(struct sdtp_rpc_mlist, sdtp_rpc) ready_links;
-	SDTP_QUEUE_ENTRY(struct sdtp_rpc_mqueue, sdtp_rpc) active_links;
-	SDTP_QUEUE_ENTRY(struct sdtp_rpc_mqueue, sdtp_rpc) dead_links;
+	LIST_ENTRY(sdtp_rpc) ready_links;
+	TAILQ_ENTRY(sdtp_rpc) active_links;
+	TAILQ_ENTRY(sdtp_rpc) dead_links;
 
 	struct sdtp_interest *interest;
 
@@ -186,7 +185,7 @@ void sdtp_rpc_unlock(struct sdtp_rpc *rpc);
 void sdtp_free_mbuf(struct mbuf *buf);
 void sdtp_rpc_free(struct sdtp_rpc *rpc);
 int sdtp_rpc_reap(struct sdtp_inpcb *pcb, bool reap_all);
-void insert_ready_rpc(struct sdtp_inpcb *pcb, struct sdtp_rpc_mlist *list,
+void insert_ready_rpc(struct sdtp_inpcb *pcb, struct sdtp_rpc_list *list,
 	struct sdtp_rpc *rpc);
 void remove_ready_rpc(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc);
 

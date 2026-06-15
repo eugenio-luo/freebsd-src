@@ -475,9 +475,6 @@ sdtp_interest_init(struct sdtp_interest *interest)
 	interest->reg_rpc = NULL;
 	atomic_store_int(&interest->is_response_atomic, false);
 	atomic_store_int(&interest->is_request_atomic, false);
-
-	SDTP_QUEUE_ENTRY_INIT(&interest->response_links);
-	SDTP_QUEUE_ENTRY_INIT(&interest->request_links);
 }
 
 // TODO: fix uninit

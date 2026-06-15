@@ -45,14 +45,14 @@ sdtp_rpc_unlock(struct sdtp_rpc *rpc)
 }
 
 void
-insert_ready_rpc(struct sdtp_inpcb *pcb, struct sdtp_rpc_mlist *list,
+insert_ready_rpc(struct sdtp_inpcb *pcb, struct sdtp_rpc_list *list,
 	struct sdtp_rpc *rpc)
 {
 	PCB_LOCK_OWNED(pcb);
 	MPASS(atomic_load_int(&rpc->is_ready_atomic) == false);
 
 	atomic_store_int(&rpc->is_ready_atomic, true);
-	SDTP_LIST_INSERT_HEAD(list, rpc, ready_links);
+	LIST_INSERT_HEAD(list, rpc, ready_links);
 }
 
 void
@@ -61,7 +61,7 @@ remove_ready_rpc(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc)
 	PCB_LOCK_OWNED(pcb);
 	MPASS(atomic_load_int(&rpc->is_ready_atomic) == true);
 
-	SDTP_LIST_REMOVE(rpc, ready_links);
+	LIST_REMOVE(rpc, ready_links);
 	atomic_store_int(&rpc->is_ready_atomic, false);
 }
 
@@ -134,16 +134,14 @@ sdtp_handoff_rpc(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc)
 
 	if (sdtp_is_client(rpc->id)) {
 		sdtp_rpc_debug(rpc, "check if thread is waiting for response");
-		interest = SDTP_QUEUE_FIRST(&pcb->response_interests,
-		    sdtp_interest);
+		interest = TAILQ_FIRST(&pcb->response_interests);
 		if (interest) {
 			goto sdtp_handoff_rpc_waiting;
 		}
 		insert_ready_rpc(pcb, &pcb->ready_responses, rpc);
 	} else {
 		sdtp_rpc_debug(rpc, "check if thread is waiting for request");
-		interest = SDTP_QUEUE_FIRST(&pcb->request_interests,
-		    sdtp_interest);
+		interest = TAILQ_FIRST(&pcb->request_interests);
 		if (interest) {
 			goto sdtp_handoff_rpc_waiting;
 		}
@@ -200,14 +198,13 @@ sdtp_find_client_rpc(struct sdtp_inpcb *pcb, uint64_t id)
 
 	sdtp_pcb_debug(pcb, "finding client rpc");
 
-	SDTP_LIST_LOCK(&bucket->rpcs);
-	SDTP_LIST_FOREACH_LOCKED(rpc, &bucket->rpcs, hash_links)
-	{
+	mtx_lock_spin(&bucket->spinlock);
+	LIST_FOREACH(rpc, &bucket->rpcs, hash_links) {
 		if (rpc->id == id) {
 			return rpc;
 		}
 	}
-	SDTP_LIST_UNLOCK(&bucket->rpcs);
+	mtx_unlock_spin(&bucket->spinlock);
 	return NULL;
 }
 
@@ -220,15 +217,14 @@ sdtp_find_server_rpc(struct sdtp_inpcb *pcb, struct in6_addr *source,
 
 	sdtp_pcb_debug(pcb, "finding server rpc");
 
-	SDTP_LIST_LOCK(&bucket->rpcs);
-	SDTP_LIST_FOREACH_LOCKED(rpc, &bucket->rpcs, hash_links)
-	{
+	mtx_lock_spin(&bucket->spinlock);
+	LIST_FOREACH(rpc, &bucket->rpcs, hash_links) {
 		if (rpc->id == id && rpc->dport == port &&
 		    is_ipv6_same(&rpc->peer->addr, source)) {
 			return rpc;
 		}
 	}
-	SDTP_LIST_UNLOCK(&bucket->rpcs);
+	mtx_unlock_spin(&bucket->spinlock);
 	return NULL;
 }
 
@@ -261,11 +257,7 @@ sdtp_new_client_rpc(struct sdtp_inpcb *pcb, struct in6_addr *dest,
 	rpc->dport = port;
 	rpc->msgin.total_length = -1;
 	rpc->msgout.length = -1;
-	SDTP_LIST_ENTRY_INIT(&rpc->hash_links);
 	atomic_store_int(&rpc->is_ready_atomic, false);
-	SDTP_LIST_ENTRY_INIT(&rpc->ready_links);
-	SDTP_QUEUE_ENTRY_INIT(&rpc->active_links);
-	SDTP_QUEUE_ENTRY_INIT(&rpc->dead_links);
 	TAILQ_INIT(&rpc->grantable_links);
 	TAILQ_INIT(&rpc->throttled_links);
 	rpc->resend_timer_ticks = pcb->sdtp->timer_ticks;
@@ -288,12 +280,10 @@ sdtp_new_client_rpc(struct sdtp_inpcb *pcb, struct in6_addr *dest,
 		}
 	}
 
-	SDTP_QUEUE_LOCK(&pcb->active_rpcs);
-	SDTP_LIST_LOCK(&bucket->rpcs);
-	rpc->spinlock_p = &bucket->rpcs.spinlock;
-	SDTP_LIST_INSERT_HEAD_LOCKED(&bucket->rpcs, rpc, hash_links);
-	SDTP_QUEUE_INSERT_TAIL_LOCKED(&pcb->active_rpcs, rpc, active_links);
-	SDTP_QUEUE_UNLOCK(&pcb->active_rpcs);
+	mtx_lock_spin(&bucket->spinlock);
+	rpc->spinlock_p = &bucket->spinlock;
+	LIST_INSERT_HEAD(&bucket->rpcs, rpc, hash_links);
+	TAILQ_INSERT_TAIL(&pcb->active_rpcs, rpc, active_links);
 	sdtp_pcb_unlock(pcb);
 
 	return rpc;
@@ -352,11 +342,7 @@ sdtp_init_server_rpc_fields(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc,
 	rpc->id = id;
 	rpc->completion_cookie = 0;
 	rpc->error = 0;
-	SDTP_LIST_ENTRY_INIT(&rpc->hash_links);
 	atomic_store_int(&rpc->is_ready_atomic, false);
-	SDTP_LIST_ENTRY_INIT(&rpc->ready_links);
-	SDTP_QUEUE_ENTRY_INIT(&rpc->active_links);
-	SDTP_QUEUE_ENTRY_INIT(&rpc->dead_links);
 	rpc->msgin.total_length = -1;
 	rpc->msgin.num_bufs = 0;
 	rpc->msgin.num_bpages = 0;
@@ -380,12 +366,10 @@ sdtp_lock_rpc_and_insert_pcb_list(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc,
 {
 	struct sdtp_rpc_bucket *bucket = sdtp_server_rpc_bucket(pcb, id);
 
-	SDTP_QUEUE_LOCK(&pcb->active_rpcs);
-	SDTP_LIST_LOCK(&bucket->rpcs);
-	rpc->spinlock_p = &bucket->rpcs.spinlock;
-	SDTP_LIST_INSERT_HEAD_LOCKED(&bucket->rpcs, rpc, hash_links);
-	SDTP_QUEUE_INSERT_TAIL_LOCKED(&pcb->active_rpcs, rpc, active_links);
-	SDTP_QUEUE_UNLOCK(&pcb->active_rpcs);
+	mtx_lock_spin(&bucket->spinlock);
+	rpc->spinlock_p = &bucket->spinlock;
+	LIST_INSERT_HEAD(&bucket->rpcs, rpc, hash_links);
+	TAILQ_INSERT_TAIL(&pcb->active_rpcs, rpc, active_links);
 }
 
 static struct sdtp_expected_rpc_ptr
@@ -562,20 +546,33 @@ sdtp_rpc_acked(struct sdtp_inpcb *pcb, struct in6_addr *source_addr,
 	uint64_t id = sdtp_local_id(ack->client_id_be);
 	struct sdtp_inpcb *tmp = pcb;
 	struct sdtp_rpc *rpc;
+	bool target_locked = false;
+
+	PCB_LOCK_OWNED(pcb);
 
 	if (tmp->port != server_port) {
+		sdtp_pcb_unlock(pcb);
+		mtx_lock_spin(&pcb->sdtp->port_map.write_spinlock);
 		tmp = sdtp_find_inpcb(&pcb->sdtp->port_map, server_port);
-		if (!tmp) {
+		if (tmp != NULL) {
+			sdtp_pcb_lock(tmp);
+			target_locked = true;
+		}
+		mtx_unlock_spin(&pcb->sdtp->port_map.write_spinlock);
+		if (tmp == NULL) {
+			sdtp_pcb_lock(pcb);
 			return;
 		}
 	}
 
 	rpc = sdtp_find_server_rpc(tmp, source_addr, source_port, id);
 	if (rpc) {
-		SDTP_QUEUE_LOCK(&pcb->active_rpcs);
 		sdtp_rpc_free(rpc);
-		SDTP_QUEUE_UNLOCK(&pcb->active_rpcs);
 		sdtp_rpc_unlock(rpc);
+	}
+	if (target_locked) {
+		sdtp_pcb_unlock(tmp);
+		sdtp_pcb_lock(pcb);
 	}
 }
 
@@ -713,7 +710,9 @@ sdtp_rpc_reap(struct sdtp_inpcb *pcb, bool reap_all)
 	sdtp_pcb_debug(pcb, "reap dead rpcs");
 
 	bufs_to_reap = pcb->sdtp->reap_limit;
-	checked_all_rpcs = SDTP_QUEUE_EMPTY(&pcb->dead_rpcs);
+	sdtp_pcb_lock(pcb);
+	checked_all_rpcs = TAILQ_EMPTY(&pcb->dead_rpcs);
+	sdtp_pcb_unlock(pcb);
 	sdtp_pcb_debug(pcb, "empty dead rpcs? %d", checked_all_rpcs);
 	while (!checked_all_rpcs) {
 		batch_size = BATCH_MAX;
@@ -740,10 +739,7 @@ sdtp_rpc_reap(struct sdtp_inpcb *pcb, bool reap_all)
 			return 0;
 		}
 
-		SDTP_QUEUE_LOCK(&pcb->dead_rpcs);
-		SDTP_QUEUE_FOREACH_SAFE_LOCKED(rpc, &pcb->dead_rpcs, dead_links,
-		    tmp)
-		{
+		TAILQ_FOREACH_SAFE(rpc, &pcb->dead_rpcs, dead_links, tmp) {
 			u_int refs;
 
 			sdtp_rpc_lock(rpc);
@@ -784,8 +780,7 @@ sdtp_rpc_reap(struct sdtp_inpcb *pcb, bool reap_all)
 
 			rpcs[num_rpcs] = rpc;
 			++num_rpcs;
-			SDTP_QUEUE_REMOVE_LOCKED(&pcb->dead_rpcs, rpc,
-			    dead_links);
+			TAILQ_REMOVE(&pcb->dead_rpcs, rpc, dead_links);
 			if (num_rpcs >= batch_size) {
 				goto sdtp_reap_rpc_release;
 			}
@@ -793,7 +788,6 @@ sdtp_rpc_reap(struct sdtp_inpcb *pcb, bool reap_all)
 		checked_all_rpcs = true;
 
 	sdtp_reap_rpc_release:
-		SDTP_QUEUE_UNLOCK(&pcb->dead_rpcs);
 		pcb->dead_bufs -= num_out_pkts + num_in_pkts;
 		sdtp_pcb_unlock(pcb);
 
@@ -963,9 +957,7 @@ sdtp_ack_packet(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc,
 	int n = ntohs(header->num_acks_be);
 
 	if (rpc) {
-		SDTP_QUEUE_LOCK(&pcb->active_rpcs);
 		sdtp_rpc_free(rpc);
-		SDTP_QUEUE_UNLOCK(&pcb->active_rpcs);
 	}
 
 	if (n > 0) {
@@ -1084,6 +1076,7 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source,
 	    ("mbuf must contain its type header"));
 
 	bool consumed = false;
+	bool reap_dead_rpcs;
 	struct sdtp_rpc *rpc = NULL;
 	struct sdtp_expected_rpc_ptr expected_rpc;
 	int payload_size = (header->type == SDTP_DATA) ? sdtp_payload_len(m, pcb->iphlen) : -1;
@@ -1158,7 +1151,11 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source,
 	}
 	sdtp_pcb_unlock(pcb);
 
-	if (pcb->dead_bufs >= 2 * pcb->sdtp->dead_buffs_limit) {
+	sdtp_pcb_lock(pcb);
+	reap_dead_rpcs =
+	    pcb->dead_bufs >= 2 * pcb->sdtp->dead_buffs_limit;
+	sdtp_pcb_unlock(pcb);
+	if (reap_dead_rpcs) {
 		sdtp_rpc_reap(pcb, /* reap_all */ false);
 	}
 
@@ -1182,28 +1179,26 @@ sdtp_rpc_free(struct sdtp_rpc *rpc)
 	VALID_RPC_ASSERT(rpc);
 	RPC_LOCK_OWNED(rpc);
 
+
+	VALID_RPC_ASSERT(rpc);
+	RPC_LOCK_OWNED(rpc);
+	PCB_LOCK_OWNED(rpc->sdtpcb);
+
 	int delta;
 
-	if (rpc == NULL || rpc->state == SDTP_RPC_DEAD) {
+	if (rpc->state == SDTP_RPC_DEAD) {
 		return;
 	}
 
 	rpc->state = SDTP_RPC_DEAD;
 	// TODO: sdtp_remove_from_grantable
 
-	/* TODO: somehow sdtp_pcb_free hold the lock for this? */
-	if (SDTP_LIST_LINKED(rpc, hash_links)) {
-		SDTP_LIST_REMOVE_LOCKED(rpc, hash_links);
-	}
-	/* we don't need to lock here sdtp_pcb_free own the lock */
-	if (SDTP_QUEUE_LINKED(rpc, active_links)) {
-		SDTP_QUEUE_REMOVE_LOCKED(&(rpc->sdtpcb->active_rpcs), rpc,
-		    active_links);
-	}
-	SDTP_QUEUE_INSERT_TAIL(&(rpc->sdtpcb->dead_rpcs), rpc, dead_links);
+	LIST_REMOVE(rpc, hash_links);
+	TAILQ_REMOVE(&rpc->sdtpcb->active_rpcs, rpc, active_links);
+	TAILQ_INSERT_TAIL(&rpc->sdtpcb->dead_rpcs, rpc, dead_links);
 	rpc->sdtpcb->dead_bufs += rpc->msgin.num_bufs + rpc->msgout.num_bufs;
-	if (SDTP_LIST_LOCK_IF_LINKED(rpc, ready_links)) {
-		SDTP_LIST_REMOVE_LOCKED_THEN_UNLOCK(rpc, ready_links);
+	if (atomic_load_int(&rpc->is_ready_atomic)) {
+		remove_ready_rpc(rpc->sdtpcb, rpc);
 	}
 	if (rpc->interest != NULL) {
 		rpc->interest->reg_rpc = NULL;

@@ -17,7 +17,6 @@
 
 #include "sdtp_os.h"
 #include "sdtp_pcb.h"
-#include "sdtp_queue.h"
 #include "sdtp_structs.h"
 #include "sdtp_debug.h"
 
@@ -30,8 +29,7 @@ insert_response_interest(struct sdtp_inpcb *pcb, struct sdtp_interest *interest)
 	MPASS(atomic_load_int(&interest->is_response_atomic) == false);
 
 	atomic_store_int(&interest->is_response_atomic, true);
-	SDTP_QUEUE_INSERT_TAIL(&pcb->response_interests, interest,
-	    response_links);
+	TAILQ_INSERT_TAIL(&pcb->response_interests, interest, response_links);
 }
 
 void
@@ -40,7 +38,7 @@ remove_response_interest(struct sdtp_inpcb *pcb, struct sdtp_interest *interest)
 	PCB_LOCK_OWNED(pcb);
 	MPASS(atomic_load_int(&interest->is_response_atomic) == true);
 
-	SDTP_QUEUE_REMOVE(&pcb->response_interests, interest, response_links);
+	TAILQ_REMOVE(&pcb->response_interests, interest, response_links);
 	atomic_store_int(&interest->is_response_atomic, false);
 }
 
@@ -51,8 +49,7 @@ insert_request_interest(struct sdtp_inpcb *pcb, struct sdtp_interest *interest)
 	MPASS(atomic_load_int(&interest->is_request_atomic) == false);
 
 	atomic_store_int(&interest->is_request_atomic, true);
-	SDTP_QUEUE_INSERT_TAIL(&pcb->request_interests, interest,
-	    request_links);
+	TAILQ_INSERT_TAIL(&pcb->request_interests, interest, request_links);
 }
 
 void
@@ -61,7 +58,7 @@ remove_request_interest(struct sdtp_inpcb *pcb, struct sdtp_interest *interest)
 	PCB_LOCK_OWNED(pcb);
 	MPASS(atomic_load_int(&interest->is_request_atomic) == true);
 
-	SDTP_QUEUE_REMOVE(&pcb->request_interests, interest, request_links);
+	TAILQ_REMOVE(&pcb->request_interests, interest, request_links);
 	atomic_store_int(&interest->is_request_atomic, false);
 }
 
@@ -170,21 +167,23 @@ sdtp_inpcb_alloc(struct socket *so, struct sdtp *sdtp)
 
 	for (i = 0; i < SDTP_CLIENT_RPC_BUCKETS; i++) {
 		struct sdtp_rpc_bucket *bucket = &inp->client_rpc_buckets[i];
-		SDTP_LIST_INIT(&bucket->rpcs);
+		mtx_init(&bucket->spinlock, "client RPC bucket", NULL, MTX_SPIN);
+		LIST_INIT(&bucket->rpcs);
 	}
 	for (i = 0; i < SDTP_SERVER_RPC_BUCKETS; i++) {
 		struct sdtp_rpc_bucket *bucket = &inp->server_rpc_buckets[i];
-		SDTP_LIST_INIT(&bucket->rpcs);
+		mtx_init(&bucket->spinlock, "server RPC bucket", NULL, MTX_SPIN);
+		LIST_INIT(&bucket->rpcs);
 		LIST_INIT(&inp->ctx_map.buckets[i]);
 	}
 
-	SDTP_QUEUE_INIT(&inp->active_rpcs);
-	SDTP_QUEUE_INIT(&inp->dead_rpcs);
+	TAILQ_INIT(&inp->active_rpcs);
+	TAILQ_INIT(&inp->dead_rpcs);
 	inp->dead_bufs = 0;
-	SDTP_LIST_INIT(&inp->ready_requests);
-	SDTP_LIST_INIT(&inp->ready_responses);
-	SDTP_QUEUE_INIT(&inp->request_interests);
-	SDTP_QUEUE_INIT(&inp->response_interests);
+	LIST_INIT(&inp->ready_requests);
+	LIST_INIT(&inp->ready_responses);
+	TAILQ_INIT(&inp->request_interests);
+	TAILQ_INIT(&inp->response_interests);
 	inp->ctx_map.reuse_ctx = NULL;
 	inp->ctx_map.active = false;
 
@@ -228,34 +227,20 @@ sdtp_inpcb_shutdown(struct sdtp_inpcb *pcb)
 	mtx_lock_spin(&pcb->sdtp->port_map.write_spinlock);
 	LIST_REMOVE(&pcb->pcbmap_links, hash_links);
 	mtx_unlock_spin(&pcb->sdtp->port_map.write_spinlock);
-	sdtp_pcb_unlock(pcb);
 
-	SDTP_QUEUE_LOCK(&pcb->active_rpcs);
-	SDTP_QUEUE_FOREACH_SAFE_LOCKED(rpc, &pcb->active_rpcs, active_links,
-	    next_rpc)
-	{
+	TAILQ_FOREACH_SAFE(rpc, &pcb->active_rpcs, active_links, next_rpc) {
 		sdtp_rpc_lock(rpc);
 		sdtp_rpc_free(rpc);
 		sdtp_rpc_unlock(rpc);
 	}
-	SDTP_QUEUE_UNLOCK(&pcb->active_rpcs);
 
-	sdtp_pcb_lock(pcb);
-	SDTP_QUEUE_LOCK(&pcb->request_interests);
-	SDTP_QUEUE_FOREACH_LOCKED(interest, &pcb->request_interests,
-	    request_links)
-	{
+	TAILQ_FOREACH(interest, &pcb->request_interests, request_links) {
 		wakeup(&interest->spinlock);
 	}
-	SDTP_QUEUE_UNLOCK(&pcb->request_interests);
 
-	SDTP_QUEUE_LOCK(&pcb->response_interests);
-	SDTP_QUEUE_FOREACH_LOCKED(interest, &pcb->response_interests,
-	    response_links)
-	{
+	TAILQ_FOREACH(interest, &pcb->response_interests, response_links) {
 		wakeup(&interest->spinlock);
 	}
-	SDTP_QUEUE_UNLOCK(&pcb->response_interests);
 	sdtp_pcb_unlock(pcb);
 
 	/*
@@ -270,9 +255,16 @@ sdtp_pcb_free(struct sdtp_inpcb *pcb)
 	VALID_PCB_ASSERT(pcb);
 
 	struct inpcb *inp = &pcb->inp;
+	bool dead_rpcs_empty;
 
 	int i = 0;
-	while (!SDTP_QUEUE_EMPTY(&pcb->dead_rpcs)) {
+	for (;;) {
+		sdtp_pcb_lock(pcb);
+		dead_rpcs_empty = TAILQ_EMPTY(&pcb->dead_rpcs);
+		sdtp_pcb_unlock(pcb);
+		if (dead_rpcs_empty) {
+			break;
+		}
 		sdtp_rpc_reap(pcb, /* reap_all */ true);
 		KASSERT(i < 6, ("%s: hanged while freeing dead RPCs", __func__));
 		++i;
@@ -280,20 +272,12 @@ sdtp_pcb_free(struct sdtp_inpcb *pcb)
 
 	sdtp_ctx_map_destroy(pcb);
 	mtx_destroy(&pcb->spinlock);
-	SDTP_QUEUE_FREE(&pcb->active_rpcs);
-	SDTP_QUEUE_FREE(&pcb->dead_rpcs);
-
-	SDTP_LIST_FREE(&pcb->ready_requests);
-	SDTP_LIST_FREE(&pcb->ready_responses);
-
-	SDTP_QUEUE_FREE(&pcb->request_interests);
-	SDTP_QUEUE_FREE(&pcb->response_interests);
 
 	for (int i = 0; i < SDTP_CLIENT_RPC_BUCKETS; ++i) {
-		SDTP_LIST_FREE(&pcb->client_rpc_buckets[i].rpcs);
+		mtx_destroy(&pcb->client_rpc_buckets[i].spinlock);
 	}
 	for (int i = 0; i < SDTP_SERVER_RPC_BUCKETS; ++i) {
-		SDTP_LIST_FREE(&pcb->server_rpc_buckets[i].rpcs);
+		mtx_destroy(&pcb->server_rpc_buckets[i].spinlock);
 	}
 
 	INP_WLOCK(inp);

@@ -20,7 +20,6 @@
 
 #include "sdtp_common.h"
 #include "sdtp_ctx.h"
-#include "sdtp_queue.h"
 
 struct sdtp;
 struct sdtp_inpcb;
@@ -38,14 +37,13 @@ struct sdtp_interest {
 
 	int is_response_atomic;
 	int is_request_atomic;
-	SDTP_QUEUE_ENTRY(struct sdtp_interest_mqueue, sdtp_interest)
-	request_links;
-	SDTP_QUEUE_ENTRY(struct sdtp_interest_mqueue, sdtp_interest)
-	response_links;
+	TAILQ_ENTRY(sdtp_interest) request_links;
+	TAILQ_ENTRY(sdtp_interest) response_links;
 };
 
 struct sdtp_rpc_bucket {
-	struct sdtp_rpc_mlist rpcs;
+	struct mtx spinlock;
+	struct sdtp_rpc_list rpcs;
 };
 
 struct sdtp_pcbmap_link {
@@ -72,16 +70,16 @@ struct sdtp_inpcb {
 
 	struct sdtp_pcbmap_link pcbmap_links;
 
-	struct sdtp_rpc_mqueue active_rpcs;
-	struct sdtp_rpc_mqueue dead_rpcs;
+	struct sdtp_rpc_tailq active_rpcs;
+	struct sdtp_rpc_tailq dead_rpcs;
 
 	int dead_bufs;
 
-	struct sdtp_rpc_mlist ready_requests;
-	struct sdtp_rpc_mlist ready_responses;
+	struct sdtp_rpc_list ready_requests;
+	struct sdtp_rpc_list ready_responses;
 
-	struct sdtp_interest_mqueue request_interests;
-	struct sdtp_interest_mqueue response_interests;
+	struct sdtp_interest_tailq request_interests;
+	struct sdtp_interest_tailq response_interests;
 
 	struct sdtp_rpc_bucket client_rpc_buckets[SDTP_CLIENT_RPC_BUCKETS];
 	struct sdtp_rpc_bucket server_rpc_buckets[SDTP_SERVER_RPC_BUCKETS];
