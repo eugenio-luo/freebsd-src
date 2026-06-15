@@ -184,6 +184,7 @@ void sdtp_rpc_lock(struct sdtp_rpc *rpc);
 void sdtp_rpc_unlock(struct sdtp_rpc *rpc);
 void sdtp_free_mbuf(struct mbuf *buf);
 void sdtp_rpc_free(struct sdtp_rpc *rpc);
+void sdtp_rpc_free_locked(struct sdtp_rpc *rpc);
 int sdtp_rpc_reap(struct sdtp_inpcb *pcb, bool reap_all);
 void insert_ready_rpc(struct sdtp_inpcb *pcb, struct sdtp_rpc_list *list,
 	struct sdtp_rpc *rpc);

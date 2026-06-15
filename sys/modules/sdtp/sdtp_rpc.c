@@ -567,7 +567,7 @@ sdtp_rpc_acked(struct sdtp_inpcb *pcb, struct in6_addr *source_addr,
 
 	rpc = sdtp_find_server_rpc(tmp, source_addr, source_port, id);
 	if (rpc) {
-		sdtp_rpc_free(rpc);
+		sdtp_rpc_free_locked(rpc);
 		sdtp_rpc_unlock(rpc);
 	}
 	if (target_locked) {
@@ -957,7 +957,7 @@ sdtp_ack_packet(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc,
 	int n = ntohs(header->num_acks_be);
 
 	if (rpc) {
-		sdtp_rpc_free(rpc);
+		sdtp_rpc_free_locked(rpc);
 	}
 
 	if (n > 0) {
@@ -1179,7 +1179,16 @@ sdtp_rpc_free(struct sdtp_rpc *rpc)
 	VALID_RPC_ASSERT(rpc);
 	RPC_LOCK_OWNED(rpc);
 
+	struct sdtp_inpcb *pcb = rpc->sdtpcb;
 
+	sdtp_pcb_lock(pcb);
+	sdtp_rpc_free_locked(rpc);
+	sdtp_pcb_unlock(pcb);
+}
+
+void
+sdtp_rpc_free_locked(struct sdtp_rpc *rpc)
+{
 	VALID_RPC_ASSERT(rpc);
 	RPC_LOCK_OWNED(rpc);
 	PCB_LOCK_OWNED(rpc->sdtpcb);

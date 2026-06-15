@@ -230,7 +230,7 @@ sdtp_inpcb_shutdown(struct sdtp_inpcb *pcb)
 
 	TAILQ_FOREACH_SAFE(rpc, &pcb->active_rpcs, active_links, next_rpc) {
 		sdtp_rpc_lock(rpc);
-		sdtp_rpc_free(rpc);
+		sdtp_rpc_free_locked(rpc);
 		sdtp_rpc_unlock(rpc);
 	}
 
