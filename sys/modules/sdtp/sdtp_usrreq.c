@@ -532,6 +532,34 @@ sdtp_ctx_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc)
 	return (error);
 }
 
+static void
+sdtp_unregister_interest(struct sdtp_inpcb *pcb,
+    struct sdtp_interest *interest)
+{
+	struct sdtp_rpc *rpc = interest->reg_rpc;
+
+	if (rpc != NULL) {
+		sdtp_rpc_lock(rpc);
+	}
+	sdtp_pcb_lock(pcb);
+	if (rpc != NULL && interest->reg_rpc == rpc &&
+	    rpc->interest == interest) {
+		rpc->interest = NULL;
+		interest->reg_rpc = NULL;
+		sdtp_rpc_put(rpc);
+	}
+	if (atomic_load_int(&interest->is_response_atomic)) {
+		remove_response_interest(pcb, interest);
+	}
+	if (atomic_load_int(&interest->is_request_atomic)) {
+		remove_request_interest(pcb, interest);
+	}
+	sdtp_pcb_unlock(pcb);
+	if (rpc != NULL) {
+		sdtp_rpc_unlock(rpc);
+	}
+}
+
 static struct sdtp_rpc *
 sdtp_wait_for_message(struct sdtp_inpcb *pcb, int flags, uint64_t id,
     struct uio *uio, int *error)
@@ -604,21 +632,7 @@ sdtp_wait_for_message(struct sdtp_inpcb *pcb, int flags, uint64_t id,
 		sdtp_pcb_debug(pcb, "waking up");
 
 	sdtp_wait_for_message_found_rpc:
-		if (interest.reg_rpc != NULL ||
-		    atomic_load_int(&interest.is_response_atomic) ||
-		    atomic_load_int(&interest.is_request_atomic)) {
-			sdtp_pcb_lock(pcb);
-			if (interest.reg_rpc) {
-				interest.reg_rpc->interest = NULL;
-			}
-			if (atomic_load_int(&interest.is_response_atomic)) {
-				remove_response_interest(pcb, &interest);
-			}
-			if (atomic_load_int(&interest.is_request_atomic)) {
-				remove_request_interest(pcb, &interest);
-			}
-			sdtp_pcb_unlock(pcb);
-		}
+		sdtp_unregister_interest(pcb, &interest);
 
 		rpc = (struct sdtp_rpc *)atomic_load_ptr(
 		    &interest.ready_rpc_atomic);
