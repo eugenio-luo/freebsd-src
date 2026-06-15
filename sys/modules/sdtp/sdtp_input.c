@@ -134,14 +134,11 @@ sdtp_input(struct mbuf **mp, int *offp, int proto)
 		goto sdtp_input_done;
 	}
 
-	sdtp_pcb_unlock(pcb);
-	/* We want to guarantee that the entire header is accessible */
 	if ((m = m_pullup(m, *offp + sdtp_header_lengths[header->type - SDTP_DATA])) ==
 	    NULL) {
 		sdtp_debug("%s: failed pullup typed header", __func__);
 		goto sdtp_input_done;
 	}
-	sdtp_pcb_lock(pcb);
 
 	sdtp_handle_packet(m, &src_addr, pcb);
 
