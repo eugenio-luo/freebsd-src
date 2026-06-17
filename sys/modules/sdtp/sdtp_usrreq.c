@@ -566,7 +566,7 @@ sdtp_wait_for_message(struct sdtp_inpcb *pcb, int flags, uint64_t id,
 	struct sdtp_rpc *rpc = NULL;
 	struct sdtp_interest interest;
 	uint64_t poll_start, now;
-	int blocked, more_rpcs_to_reap = true;
+	int blocked, sleep_error, more_rpcs_to_reap = true;
 
 	while (1) {
 		sdtp_pcb_debug(pcb, "check if there is waiting interest");
@@ -607,7 +607,11 @@ sdtp_wait_for_message(struct sdtp_inpcb *pcb, int flags, uint64_t id,
 			}
 
 			blocked = get_cyclecount();
-			pause("sdtp_poll", 1);
+			sleep_error = pause_sig("sdtp_poll", 1);
+			if (sleep_error != 0) {
+				*error = sleep_error;
+				goto sdtp_wait_for_message_found_rpc;
+			}
 			now = get_cyclecount();
 			blocked = now - blocked;
 			poll_start += blocked;
