@@ -996,6 +996,10 @@ sdtp_tls_fill_packets(struct sdtp_rpc *rpc, struct uio *uio, int max_packet_size
 	struct ktls_ocf_encrypt_state state;
 	struct ktls_session *session = sdtp_ctx_get_session(rpc, true);
 
+	if (max_packet_size > session->params.max_frame_len) {
+		return (EMSGSIZE);
+	}
+
 	rsizes = sdtp_calc_tls_record_sizes(rpc, max_packet_size);
 	sdtp_rpc_debug(rpc, "total TLS message length to send: %d", rsizes.data);
 
