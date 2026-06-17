@@ -1015,32 +1015,18 @@ sdtp_resend_packet(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc,
 		   rpc->msgout.granted)) /* 2. we chose not send this message */
 	{
 		sdtp_pcb_debug(pcb, "resend_packet: send busy");
-		// TODO: fix this horrible locking
-		sdtp_pcb_unlock(pcb);
-		if (rpc) {
-			sdtp_rpc_unlock(rpc);
-		}
+		sdtp_rpc_unlock(rpc);
 		sdtp_send_control(rpc, SDTP_BUSY, &busy, sizeof(busy));
-		if (rpc) {
-			sdtp_rpc_lock(rpc);
-		}
-		sdtp_pcb_lock(pcb);
+		sdtp_rpc_lock(rpc);
 		return;
 	}
 
 	sdtp_pcb_debug(pcb, "resend_packet: send data (offset: %d, end: %d)",
 	    offset, end);
 
-	// TODO: fix this horrible locking
-	sdtp_pcb_unlock(pcb);
-	if (rpc) {
-		sdtp_rpc_unlock(rpc);
-	}
+	sdtp_rpc_unlock(rpc);
 	sdtp_resend_data(rpc, offset, end, header->priority);
-	if (rpc) {
-		sdtp_rpc_lock(rpc);
-	}
-	sdtp_pcb_lock(pcb);
+	sdtp_rpc_lock(rpc);
 }
 
 static void
