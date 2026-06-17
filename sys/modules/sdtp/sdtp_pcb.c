@@ -215,7 +215,7 @@ sdtp_inpcb_alloc(struct socket *so, struct sdtp *sdtp)
 void
 sdtp_inpcb_shutdown(struct sdtp_inpcb *pcb)
 {
-	struct sdtp_rpc *rpc;
+	struct sdtp_rpc *rpc, *next_rpc;
 	struct sdtp_interest *interest;
 
 	sdtp_pcb_lock(pcb);
