@@ -67,13 +67,16 @@ sdtp_get_pcb(struct sdtp *sdtp_struct,
 		mtx_unlock_spin(&sdtp_struct->port_map.write_spinlock);
 		return (NULL);
 	}
-	sdtp_pcb_lock(pcb);
+	sdtp_pcb_hold(pcb);
 	mtx_unlock_spin(&sdtp_struct->port_map.write_spinlock);
 
-	if (sdtp_so(pcb) == NULL || pcb->iphlen != offset) {
+	sdtp_pcb_lock(pcb);
+	if (pcb->shutdown || sdtp_so(pcb) == NULL || pcb->iphlen != offset) {
 		sdtp_pcb_unlock(pcb);
+		sdtp_pcb_put(pcb);
 		return (NULL);
 	}
+	sdtp_pcb_unlock(pcb);
 
 	return pcb;
 }
@@ -145,6 +148,7 @@ sdtp_input(struct mbuf **mp, int *offp, int proto)
 sdtp_input_done:
 	if (pcb) {
 		check_pcb_locks(pcb);
+		sdtp_pcb_put(pcb);
 	}
 	return (IPPROTO_DONE);
 }

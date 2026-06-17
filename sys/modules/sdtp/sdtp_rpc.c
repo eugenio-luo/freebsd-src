@@ -114,15 +114,22 @@ sdtp_handoff_rpc(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc)
 	VALID_RPC_ASSERT(rpc);
 	RPC_LOCK_OWNED(rpc);
 	VALID_PCB_ASSERT(pcb);
-	PCB_LOCK_OWNED(pcb);
+	PCB_LOCK_NOTOWNED(pcb);
 
 	struct sdtp_interest *interest;
 
 	sdtp_rpc_debug(rpc, "handing off");
 
+	sdtp_pcb_lock(pcb);
+	if (pcb->shutdown || rpc->state == SDTP_RPC_DEAD) {
+		sdtp_pcb_unlock(pcb);
+		return;
+	}
+
 	if ((atomic_load_32(&rpc->flags_atomic) & RPC_HANDING_OFF) ||
 	    atomic_load_int(&rpc->is_ready_atomic)) {
 		sdtp_rpc_debug(rpc, "already handing off");
+		sdtp_pcb_unlock(pcb);
 		return;
 	}
 
@@ -188,6 +195,7 @@ sdtp_handoff_rpc_waiting:
 
 	wakeup(&interest->spinlock);
 	mtx_unlock_spin(&interest->spinlock);
+	sdtp_pcb_unlock(pcb);
 }
 
 struct sdtp_rpc *
@@ -377,6 +385,7 @@ sdtp_new_server_rpc(struct sdtp_data_header *header,
 		    struct sdtp_inpcb *pcb, struct in6_addr *source, int payload_size)
 {
 	VALID_PCB_ASSERT(pcb);
+	PCB_LOCK_NOTOWNED(pcb);
 	MUST_POSITIVE(payload_size);
 
 	struct sdtp_rpc *rpc;
@@ -392,11 +401,8 @@ sdtp_new_server_rpc(struct sdtp_data_header *header,
 	}
 
 	sdtp_pcb_debug(pcb, "creating new server rpc");
-	sdtp_pcb_unlock(pcb);
-
 	rpc = sdtp_rpc_zone_get(pcb);
 	if (!rpc) {
-		sdtp_pcb_lock(pcb);
 		error = ENOMEM;
 		sdtp_pcb_debug(pcb, "not enough memory for new server rpc");
 		goto sdtp_new_server_rpc_error;
@@ -703,17 +709,13 @@ sdtp_rpc_reap(struct sdtp_inpcb *pcb, bool reap_all)
 	struct sdtp_rpc *rpcs[BATCH_MAX];
 	struct sdtp_packet_slist_entry *out_pkts[BATCH_MAX];
 	struct sdtp_packet_tailq_entry *in_pkts[BATCH_MAX];
-	bool checked_all_rpcs;
+	bool checked_all_rpcs = false;
 	int bufs_to_reap, batch_size, num_out_pkts, num_in_pkts, num_rpcs;
 	struct sdtp_rpc *rpc, *tmp;
 
 	sdtp_pcb_debug(pcb, "reap dead rpcs");
 
 	bufs_to_reap = pcb->sdtp->reap_limit;
-	sdtp_pcb_lock(pcb);
-	checked_all_rpcs = TAILQ_EMPTY(&pcb->dead_rpcs);
-	sdtp_pcb_unlock(pcb);
-	sdtp_pcb_debug(pcb, "empty dead rpcs? %d", checked_all_rpcs);
 	while (!checked_all_rpcs) {
 		batch_size = BATCH_MAX;
 		if (!reap_all) {
@@ -830,6 +832,7 @@ sdtp_get_rpc(struct sdtp_inpcb *pcb, struct sdtp_common_header *header,
 	     struct in6_addr *source, int payload_size)
 {
 	VALID_PCB_ASSERT(pcb);
+	PCB_LOCK_NOTOWNED(pcb);
 	KASSERT(header != NULL, ("header must be valid"));
 	KASSERT(source != NULL, ("source must be valid"));
 
@@ -852,7 +855,6 @@ sdtp_get_rpc(struct sdtp_inpcb *pcb, struct sdtp_common_header *header,
 			VALID_RPC_ASSERT(SDTP_GET_VAL(expected_rpc));
 			RPC_LOCK_OWNED(SDTP_GET_VAL(expected_rpc));
 		}
-		PCB_LOCK_OWNED(pcb);
 		return expected_rpc;
 	}
 
@@ -863,7 +865,6 @@ sdtp_get_rpc(struct sdtp_inpcb *pcb, struct sdtp_common_header *header,
 		VALID_RPC_ASSERT(rpc);
 		RPC_LOCK_OWNED(rpc);
 	}
-	PCB_LOCK_OWNED(pcb);
 	return SDTP_MAKE_EXPECTED(struct sdtp_expected_rpc_ptr, rpc);
 }
 
@@ -938,16 +939,11 @@ sdtp_need_ack_packet(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc,
 	    sdtp_peer_get_acks(peer, NUM_PEER_UNACKED_IDS, ack.acks));
 	sdtp_pcb_debug(pcb, "need_ack: send %d acks", ntohs(ack.num_acks_be));
 
-	// TODO: fix this horrible locking
-	if (rpc) {
-		sdtp_rpc_unlock(rpc);
-	}
 	sdtp_send_control_buf(pcb, peer, &ack, sizeof(ack));
 	sdtp_peer_put(peer);
 	if (rpc) {
 		sdtp_rpc_lock(rpc);
 	}
-	sdtp_pcb_lock(pcb);
 }
 
 static void
@@ -957,7 +953,7 @@ sdtp_ack_packet(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc,
 	int n = ntohs(header->num_acks_be);
 
 	if (rpc) {
-		sdtp_rpc_free_locked(rpc);
+		sdtp_rpc_free(rpc);
 	}
 
 	if (n > 0) {
@@ -988,9 +984,7 @@ sdtp_resend_packet(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc,
 
 	if (rpc == NULL) {
 		sdtp_pcb_debug(pcb, "resend_packet: unknown rpc");
-		sdtp_pcb_unlock(pcb);
 		sdtp_send_unknown(pcb, &header->common, source);
-		sdtp_pcb_lock(pcb);
 		return;
 	}
 
@@ -1062,7 +1056,7 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source,
 	MBUF_LEN_AT_LEAST(m, sizeof(struct sdtp_common_header) + pcb->iphlen);
 	KASSERT(m->m_flags & M_PKTHDR, ("mbuf must be a header mbuf"));
 	VALID_PCB_ASSERT(pcb);
-	PCB_LOCK_OWNED(pcb);
+	PCB_LOCK_NOTOWNED(pcb);
 	KASSERT(source != NULL, ("source must be valid"));
 
 	struct sdtp_common_header *header = SDTP_MTOD(m, struct sdtp_common_header *, pcb->iphlen);
@@ -1149,7 +1143,6 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source,
 		sdtp_rpc_put(rpc);
 		sdtp_rpc_unlock(rpc);
 	}
-	sdtp_pcb_unlock(pcb);
 
 	sdtp_pcb_lock(pcb);
 	reap_dead_rpcs =
@@ -1169,8 +1162,9 @@ sdtp_handle_packet_error:
 		sdtp_rpc_put(rpc);
 		sdtp_rpc_unlock(rpc);
 	}
-	sdtp_pcb_unlock(pcb);
-	sdtp_free_mbuf(m);
+	if (m != NULL) {
+		sdtp_free_mbuf(m);
+	}
 }
 
 void

@@ -157,6 +157,7 @@ sdtp_inpcb_alloc(struct socket *so, struct sdtp *sdtp)
 	INP_WUNLOCK(&inp->inp);
 
 	atomic_store_32(&inp->protect_count_atomic, 0);
+	refcount_init(&inp->refs, 1);
 	mtx_init(&inp->spinlock, "socket spinlock", NULL, MTX_SPIN);
 	inp->last_locker = "none";
 	inp->sdtp = sdtp;
@@ -214,7 +215,7 @@ sdtp_inpcb_alloc(struct socket *so, struct sdtp *sdtp)
 void
 sdtp_inpcb_shutdown(struct sdtp_inpcb *pcb)
 {
-	struct sdtp_rpc *rpc, *next_rpc;
+	struct sdtp_rpc *rpc;
 	struct sdtp_interest *interest;
 
 	sdtp_pcb_lock(pcb);
@@ -235,11 +236,15 @@ sdtp_inpcb_shutdown(struct sdtp_inpcb *pcb)
 	}
 
 	TAILQ_FOREACH(interest, &pcb->request_interests, request_links) {
+		mtx_lock_spin(&interest->spinlock);
 		wakeup(&interest->spinlock);
+		mtx_unlock_spin(&interest->spinlock);
 	}
 
 	TAILQ_FOREACH(interest, &pcb->response_interests, response_links) {
+		mtx_lock_spin(&interest->spinlock);
 		wakeup(&interest->spinlock);
+		mtx_unlock_spin(&interest->spinlock);
 	}
 	sdtp_pcb_unlock(pcb);
 
@@ -257,6 +262,10 @@ sdtp_pcb_free(struct sdtp_inpcb *pcb)
 	struct inpcb *inp = &pcb->inp;
 	bool dead_rpcs_empty;
 
+	while (refcount_load(&pcb->refs) != 1) {
+		pause("sdtpref", 1);
+	}
+
 	int i = 0;
 	for (;;) {
 		sdtp_pcb_lock(pcb);
@@ -271,6 +280,8 @@ sdtp_pcb_free(struct sdtp_inpcb *pcb)
 	}
 
 	sdtp_ctx_map_destroy(pcb);
+	KASSERT(refcount_release(&pcb->refs),
+	    ("%s: PCB still has operation references", __func__));
 	mtx_destroy(&pcb->spinlock);
 
 	for (int i = 0; i < SDTP_CLIENT_RPC_BUCKETS; ++i) {

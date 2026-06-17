@@ -419,6 +419,10 @@ sdtp_ctx_enable(struct sdtp_inpcb *pcb, struct sockopt *sopt, bool is_tx)
 	}
 
 	sdtp_pcb_lock(pcb);
+	if (pcb->shutdown) {
+		error = ESHUTDOWN;
+		goto sdtp_ctx_enable_locked;
+	}
 	ctx = sdtp_get_ctx(pcb, sen.peer_addr_be, sen.peer_port_be, &error);
 	if (ctx == NULL) {
 		sdtp_pcb_debug(pcb, "failed getting ctx: %d", error);
@@ -430,6 +434,11 @@ sdtp_ctx_enable(struct sdtp_inpcb *pcb, struct sockopt *sopt, bool is_tx)
 		sdtp_pcb_unlock(pcb);
 		error = sdtp_new_ktls(pcb, &sen.tls, &ktls, direction);
 		sdtp_pcb_lock(pcb);
+		if (pcb->shutdown) {
+			error = ESHUTDOWN;
+			sdtp_ctx_put(ctx);
+			goto sdtp_ctx_enable_locked;
+		}
 
 		if (error != 0) {
 			sdtp_ctx_put(ctx);

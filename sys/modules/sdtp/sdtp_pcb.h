@@ -12,6 +12,7 @@
 
 #include <sys/cdefs.h>
 #include <sys/mutex.h>
+#include <sys/refcount.h>
 #include <sys/socket.h>
 #include <sys/socketvar.h>
 
@@ -62,6 +63,7 @@ struct sdtp_inpcb {
 	struct mtx spinlock;
 	char *last_locker;
 
+	u_int refs;
 	uint32_t protect_count_atomic;
 	struct sdtp *sdtp;
 	bool shutdown;
@@ -100,6 +102,21 @@ static inline void
 sdtp_pcb_unlock(struct sdtp_inpcb *pcb)
 {
 	mtx_unlock_spin(&pcb->spinlock);
+}
+
+static inline void
+sdtp_pcb_hold(struct sdtp_inpcb *pcb)
+{
+	refcount_acquire(&pcb->refs);
+}
+
+static inline void
+sdtp_pcb_put(struct sdtp_inpcb *pcb)
+{
+	KASSERT(refcount_load(&pcb->refs) > 1,
+	    ("%s: cannot release the PCB owner reference", __func__));
+	KASSERT(!refcount_release(&pcb->refs),
+	    ("%s: PCB operation reference released the object", __func__));
 }
 
 void insert_response_interest(struct sdtp_inpcb *pcb, struct sdtp_interest *interest);
