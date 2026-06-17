@@ -632,6 +632,7 @@ sdtp_wait_for_message(struct sdtp_inpcb *pcb, int flags, uint64_t id,
 
 	sdtp_wait_for_message_found_rpc:
 		sdtp_unregister_interest(pcb, &interest);
+		mtx_destroy(&interest.spinlock);
 
 		rpc = (struct sdtp_rpc *)atomic_load_ptr(
 		    &interest.ready_rpc_atomic);
