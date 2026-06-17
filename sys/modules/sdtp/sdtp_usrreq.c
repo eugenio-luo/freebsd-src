@@ -96,8 +96,8 @@ static int
 sdtp_register_interest(struct sdtp_interest *interest, struct sdtp_inpcb *pcb,
     int flags, uint64_t id)
 {
-	int error;
-	struct sdtp_rpc *rpc = NULL, *ready_rpc;
+	int error = 0;
+	struct sdtp_rpc *rpc = NULL, *ready_rpc = NULL;
 
 	sdtp_interest_init(interest);
 	if (id != 0) {
