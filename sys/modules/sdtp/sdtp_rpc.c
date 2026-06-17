@@ -1089,9 +1089,17 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source,
 		if (is_encrypted_rpc(rpc) && header->type == SDTP_DATA) {
 			int pullup_size = pcb->iphlen + SDTP_TLS_DATA_OFFSET;
 
-			if ((m = m_pullup(m, pullup_size)) == NULL) {
+			sdtp_rpc_unlock(rpc);
+			m = m_pullup(m, pullup_size);
+			sdtp_rpc_lock(rpc);
+			if (m == NULL) {
 				goto sdtp_handle_packet_error;
 			}
+			if (rpc->state == SDTP_RPC_DEAD) {
+				goto sdtp_handle_packet_error;
+			}
+			header = SDTP_MTOD(m, struct sdtp_common_header *,
+			    pcb->iphlen);
 		}
 	}
 
