@@ -1107,7 +1107,6 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source,
 		goto sdtp_handle_packet_error;
 	}
 
-	sdtp_debug_print_pcb_rpcs(pcb, rpc);
 	SDTP_METRIC(pcb->sdtp, received_pkts[header->type - SDTP_DATA], 1);
 
 	switch (header->type) {
