@@ -978,8 +978,7 @@ sdtp_ack_packet(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc,
 		}
 
 		for (int i = 0; i < n; ++i) {
-			sdtp_rpc_acked(pcb, source,
-			    ntohs(header->common.sport_be), &header->acks[i]);
+			sdtp_rpc_acked(pcb, source, &header->acks[i]);
 		}
 
 		if (rpc) {
