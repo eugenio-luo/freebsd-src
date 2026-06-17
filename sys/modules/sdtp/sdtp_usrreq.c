@@ -15,6 +15,7 @@
 #include <sys/eventhandler.h>
 #include <sys/mbuf.h>
 #include <sys/protosw.h>
+#include <sys/sleepqueue.h>
 #include <sys/socket.h>
 #include <sys/socketvar.h>
 #include <sys/stdint.h>
@@ -37,6 +38,38 @@
 
 extern struct sdtp *sdtp;
 extern struct sdtp_zones zones;
+
+static int
+sdtp_msleep_spin_sig(const void *ident, struct mtx *mtx, const char *wmesg)
+{
+	int error;
+	WITNESS_SAVE_DECL(mtx);
+
+	if (SCHEDULER_STOPPED()) {
+		return (0);
+	}
+
+	sleepq_lock(ident);
+	DROP_GIANT();
+	mtx_assert(mtx, MA_OWNED | MA_NOTRECURSED);
+	WITNESS_SAVE(&mtx->lock_object, mtx);
+	mtx_unlock_spin(mtx);
+
+	sleepq_add(ident, &mtx->lock_object, wmesg,
+	    SLEEPQ_SLEEP | SLEEPQ_INTERRUPTIBLE, 0);
+#ifdef WITNESS
+	sleepq_release(ident);
+	WITNESS_WARN(WARN_GIANTOK | WARN_SLEEPOK, NULL,
+	    "Sleeping on \"%s\"", wmesg);
+	sleepq_lock(ident);
+#endif
+	error = sleepq_wait_sig(ident, 0);
+
+	PICKUP_GIANT();
+	mtx_lock_spin(mtx);
+	WITNESS_RESTORE(&mtx->lock_object, mtx);
+	return (error);
+}
 
 #ifdef INET
 
@@ -626,10 +659,16 @@ sdtp_wait_for_message(struct sdtp_inpcb *pcb, int flags, uint64_t id,
 		rpc = (struct sdtp_rpc *)atomic_load_ptr(
 		    &interest.ready_rpc_atomic);
 		if (rpc == NULL && !pcb->shutdown) {
-			int res = msleep_spin(&interest.spinlock,
-			    &interest.spinlock, "sdtp_pool", 0);
-			sdtp_pcb_debug(pcb, "sleep result: %d", res);
-			INTEREST_NOT_LINKED(&interest);
+			sleep_error = sdtp_msleep_spin_sig(&interest.spinlock,
+			    &interest.spinlock, "sdtp_recv");
+			sdtp_pcb_debug(pcb, "sleep result: %d", sleep_error);
+			rpc = (struct sdtp_rpc *)atomic_load_ptr(
+			    &interest.ready_rpc_atomic);
+			if (rpc != NULL) {
+				INTEREST_NOT_LINKED(&interest);
+			} else if (sleep_error != 0) {
+				*error = sleep_error;
+			}
 		}
 		mtx_unlock_spin(&interest.spinlock);
 		sdtp_pcb_debug(pcb, "waking up");
