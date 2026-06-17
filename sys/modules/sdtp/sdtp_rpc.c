@@ -260,9 +260,12 @@ sdtp_new_client_rpc(struct sdtp_inpcb *pcb, struct in6_addr *dest,
 	rpc->start_cycles = get_cyclecount();
 	refcount_init(&rpc->refs, 1);
 
+	rpc->spinlock_p = &bucket->spinlock;
+	sdtp_rpc_lock(rpc);
 	sdtp_pcb_lock(pcb);
 	if (pcb->shutdown) {
 		sdtp_pcb_unlock(pcb);
+		sdtp_rpc_unlock(rpc);
 		*error = ESHUTDOWN;
 		goto sdtp_new_client_rpc_error;
 	}
@@ -271,12 +274,11 @@ sdtp_new_client_rpc(struct sdtp_inpcb *pcb, struct in6_addr *dest,
 		*error = sdtp_rpc_ctx_init(pcb, rpc);
 		if (*error != 0) {
 			sdtp_pcb_unlock(pcb);
+			sdtp_rpc_unlock(rpc);
 			goto sdtp_new_client_rpc_error;
 		}
 	}
 
-	mtx_lock_spin(&bucket->spinlock);
-	rpc->spinlock_p = &bucket->spinlock;
 	LIST_INSERT_HEAD(&bucket->rpcs, rpc, hash_links);
 	TAILQ_INSERT_TAIL(&pcb->active_rpcs, rpc, active_links);
 	sdtp_pcb_unlock(pcb);
