@@ -638,7 +638,11 @@ sdtp_wait_for_message(struct sdtp_inpcb *pcb, int flags, uint64_t id,
 		    &interest.ready_rpc_atomic);
 		sdtp_pcb_debug(pcb, "new rpc after waking: %llu",
 		    (uintptr_t)rpc);
+		if (rpc == NULL && *error != 0) {
+			return (NULL);
+		}
 		if (rpc) {
+			*error = 0;
 			sdtp_rpc_lock(rpc);
 
 			RPC_REFS_ASSERT(rpc, 1);
