@@ -161,12 +161,12 @@ sdtp_handoff_rpc_waiting:
 	atomic_set_32(&rpc->flags_atomic, RPC_HANDING_OFF);
 	atomic_store_32(&interest->locked_atomic, 0);
 
-	atomic_store_rel_ptr(&interest->ready_rpc_atomic, (uintptr_t)rpc);
 	sdtp_rpc_hold(rpc);
 
 	if (interest->reg_rpc) {
-		interest->reg_rpc->interest = NULL;
+		rpc->interest = NULL;
 		interest->reg_rpc = NULL;
+		sdtp_rpc_put(rpc);
 	}
 
 	if (atomic_load_int(&interest->is_request_atomic)) {
@@ -176,6 +176,7 @@ sdtp_handoff_rpc_waiting:
 		remove_response_interest(pcb, interest);
 	}
 
+	atomic_store_rel_ptr(&interest->ready_rpc_atomic, (uintptr_t)rpc);
 	sdtp_rpc_debug(rpc, "waking up thread: %#x", interest->thread);
 	INTEREST_NOT_LINKED(interest);
 
