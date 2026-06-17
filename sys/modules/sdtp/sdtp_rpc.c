@@ -1212,9 +1212,16 @@ sdtp_rpc_free_locked(struct sdtp_rpc *rpc)
 		remove_ready_rpc(rpc->sdtpcb, rpc);
 	}
 	if (rpc->interest != NULL) {
-		rpc->interest->reg_rpc = NULL;
-		wakeup(&rpc->interest->spinlock);
+		struct sdtp_interest *interest = rpc->interest;
+
+		mtx_lock_spin(&interest->spinlock);
+		if (interest->reg_rpc) {
+			interest->reg_rpc = NULL;
+			sdtp_rpc_put(rpc);
+		}
 		rpc->interest = NULL;
+		wakeup(&interest->spinlock);
+		mtx_unlock_spin(&interest->spinlock);
 	}
 
 	delta = (rpc->msgin.total_length < 0) ?
