@@ -357,18 +357,6 @@ sdtp_init_server_rpc_fields(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc,
 	memset(&rpc->crypto, 0, sizeof(rpc->crypto));
 }
 
-static void
-sdtp_lock_rpc_and_insert_pcb_list(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc,
-    uint64_t id)
-{
-	struct sdtp_rpc_bucket *bucket = sdtp_server_rpc_bucket(pcb, id);
-
-	mtx_lock_spin(&bucket->spinlock);
-	rpc->spinlock_p = &bucket->spinlock;
-	LIST_INSERT_HEAD(&bucket->rpcs, rpc, hash_links);
-	TAILQ_INSERT_TAIL(&pcb->active_rpcs, rpc, active_links);
-}
-
 static struct sdtp_expected_rpc_ptr
 sdtp_new_server_rpc(struct sdtp_data_header *header,
 		    struct sdtp_inpcb *pcb, struct in6_addr *source, int payload_size)
@@ -377,7 +365,8 @@ sdtp_new_server_rpc(struct sdtp_data_header *header,
 	PCB_LOCK_NOTOWNED(pcb);
 	MUST_POSITIVE(payload_size);
 
-	struct sdtp_rpc *rpc;
+	struct sdtp_rpc_bucket *bucket;
+	struct sdtp_rpc *existing, *rpc;
 	int error = 0;
 	uint64_t id;
 
@@ -409,36 +398,53 @@ sdtp_new_server_rpc(struct sdtp_data_header *header,
 		goto sdtp_new_server_rpc_error;
 	}
 
+	bucket = sdtp_server_rpc_bucket(pcb, id);
+	rpc->spinlock_p = &bucket->spinlock;
+	sdtp_rpc_lock(rpc);
+
+	// Another CPU may have created this RPC in the meantime.
+	LIST_FOREACH(existing, &bucket->rpcs, hash_links) {
+		if (existing->id == id && existing->dport == rpc->dport &&
+		    is_ipv6_same(&existing->peer->addr, source)) {
+			sdtp_rpc_hold(existing);
+			sdtp_rpc_unlock(rpc);
+			sdtp_peer_put(rpc->peer);
+			rpc->peer = NULL;
+			sdtp_rpc_zone_free(pcb, rpc);
+
+			sdtp_rpc_lock(existing);
+			if (existing->state == SDTP_RPC_DEAD) {
+				sdtp_rpc_put(existing);
+				sdtp_rpc_unlock(existing);
+				return sdtp_new_server_rpc(header, pcb, source,
+				    payload_size);
+			}
+			sdtp_rpc_put(existing);
+			return SDTP_MAKE_EXPECTED(
+			    struct sdtp_expected_rpc_ptr, existing);
+		}
+	}
+
 	sdtp_pcb_lock(pcb);
 	if (pcb->shutdown) {
 		error = ESHUTDOWN;
+		sdtp_pcb_unlock(pcb);
+		sdtp_rpc_unlock(rpc);
 		goto sdtp_new_server_rpc_error;
 	}
 
 	if (pcb->ctx_map.active) {
 		error = sdtp_rpc_ctx_init(pcb, rpc);
 		if (error != 0) {
+			sdtp_pcb_unlock(pcb);
+			sdtp_rpc_unlock(rpc);
 			goto sdtp_new_server_rpc_error;
 		}
 	}
 
-	sdtp_lock_rpc_and_insert_pcb_list(pcb, rpc, id);
-
-	if (is_encrypted_rpc(rpc)) {
-		if (payload_size >= rpc->msgin.total_length) {
-			atomic_set_32(&rpc->flags_atomic, RPC_PKTS_READY);
-			sdtp_handoff_rpc(pcb, rpc);
-		}
-	} else {
-		// Temporary solution, because we don't have memory pools,
-		// we can only handoff when the message is complete.
-
-		// if (ntohl(header->data_segment.offset_be) == 0) {
-		if (payload_size >= rpc->msgin.total_length) {
-			atomic_set_32(&rpc->flags_atomic, RPC_PKTS_READY);
-			sdtp_handoff_rpc(pcb, rpc);
-		}
-	}
+	LIST_INSERT_HEAD(&bucket->rpcs, rpc, hash_links);
+	TAILQ_INSERT_TAIL(&pcb->active_rpcs, rpc, active_links);
+	sdtp_pcb_unlock(pcb);
 
 	return SDTP_MAKE_EXPECTED(struct sdtp_expected_rpc_ptr, rpc);
 
