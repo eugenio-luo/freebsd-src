@@ -727,7 +727,6 @@ sdtp_rpc_reap(struct sdtp_inpcb *pcb, bool reap_all)
 			if (batch_size > bufs_to_reap) {
 				batch_size = bufs_to_reap;
 			}
-			bufs_to_reap -= batch_size;
 		}
 		num_out_pkts = 0;
 		num_in_pkts = 0;
@@ -744,11 +743,16 @@ sdtp_rpc_reap(struct sdtp_inpcb *pcb, bool reap_all)
 		TAILQ_FOREACH_SAFE(rpc, &pcb->dead_rpcs, dead_links, tmp) {
 			u_int refs;
 
-			sdtp_rpc_lock(rpc);
+			// if holding the PCB lock, we don't want to spin
+			// infinitely on RPC.
+			if (!mtx_trylock_spin(rpc->spinlock_p)) {
+				checked_all_rpcs = false;
+				goto sdtp_reap_rpc_release;
+			}
 			refs = refcount_load(&rpc->refs);
-			sdtp_rpc_unlock(rpc);
 
 			if (refs > 1) {
+				sdtp_rpc_unlock(rpc);
 				continue;
 			}
 
@@ -761,6 +765,8 @@ sdtp_rpc_reap(struct sdtp_inpcb *pcb, bool reap_all)
 					++num_out_pkts;
 					--rpc->msgout.num_bufs;
 					if (num_out_pkts >= batch_size) {
+						sdtp_rpc_unlock(rpc);
+						checked_all_rpcs = false;
 						goto sdtp_reap_rpc_release;
 					}
 				}
@@ -775,6 +781,8 @@ sdtp_rpc_reap(struct sdtp_inpcb *pcb, bool reap_all)
 					++num_in_pkts;
 					--rpc->msgin.num_bufs;
 					if (num_in_pkts >= batch_size) {
+						sdtp_rpc_unlock(rpc);
+						checked_all_rpcs = false;
 						goto sdtp_reap_rpc_release;
 					}
 				}
@@ -783,7 +791,9 @@ sdtp_rpc_reap(struct sdtp_inpcb *pcb, bool reap_all)
 			rpcs[num_rpcs] = rpc;
 			++num_rpcs;
 			TAILQ_REMOVE(&pcb->dead_rpcs, rpc, dead_links);
+			sdtp_rpc_unlock(rpc);
 			if (num_rpcs >= batch_size) {
+				checked_all_rpcs = TAILQ_EMPTY(&pcb->dead_rpcs);
 				goto sdtp_reap_rpc_release;
 			}
 		}
@@ -792,6 +802,9 @@ sdtp_rpc_reap(struct sdtp_inpcb *pcb, bool reap_all)
 	sdtp_reap_rpc_release:
 		pcb->dead_bufs -= num_out_pkts + num_in_pkts;
 		sdtp_pcb_unlock(pcb);
+		if (!reap_all) {
+			bufs_to_reap -= num_out_pkts + num_in_pkts + num_rpcs;
+		}
 
 		sdtp_pcb_debug(pcb, "reap %d out packets", num_out_pkts);
 		for (int i = 0; i < num_out_pkts; ++i) {
@@ -818,9 +831,12 @@ sdtp_rpc_reap(struct sdtp_inpcb *pcb, bool reap_all)
 			}
 			rpc->magic = 0;
 			rpc->state = 0;
-			sdtp_rpc_lock(rpc);
-			sdtp_rpc_unlock(rpc);
 			sdtp_rpc_zone_free(pcb, rpc);
+		}
+
+		if (!checked_all_rpcs && num_out_pkts == 0 &&
+		    num_in_pkts == 0 && num_rpcs == 0) {
+			pause("sdtpreap", 1);
 		}
 	}
 
