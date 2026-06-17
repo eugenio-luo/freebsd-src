@@ -28,8 +28,6 @@
 
 extern struct sdtp_zones zones;
 
-// TODO: there is a possible lock reversal between rpc lock and pcb lock
-
 void
 sdtp_rpc_lock(struct sdtp_rpc *rpc)
 {
@@ -103,11 +101,6 @@ sdtp_rpc_zone_free(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc)
 	SDTP_METRIC(pcb->sdtp, freed_rpcs_atomic, 1);
 }
 
-/*
- * sdtp_handoff_rpc()
- *
- * pcb should be locked
- */
 static void
 sdtp_handoff_rpc(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc)
 {
