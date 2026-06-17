@@ -149,17 +149,10 @@ sdtp_handoff_rpc(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc)
 	}
 
 	sdtp_pcb_unlock(pcb);
-	if (rpc->spinlock_p != NULL) {
-		sdtp_rpc_unlock(rpc);
-	}
-
+	sdtp_rpc_unlock(rpc);
 	sdtp_rpc_debug(rpc, "wake up pcb");
 	sdtp_sorwakeup(pcb);
-
-	sdtp_pcb_lock(pcb);
-	if (rpc->spinlock_p != NULL) {
-		sdtp_rpc_lock(rpc);
-	}
+	sdtp_rpc_lock(rpc);
 	return;
 
 sdtp_handoff_rpc_waiting:
