@@ -541,39 +541,45 @@ sdtp_add_packet(struct mbuf *m, struct sdtp_rpc *rpc,
 
 static void
 sdtp_rpc_acked(struct sdtp_inpcb *pcb, struct in6_addr *source_addr,
-    uint16_t source_port, struct sdtp_ack *ack)
+    struct sdtp_ack *ack)
 {
 	uint16_t server_port = ntohs(ack->server_port_be);
 	uint64_t id = sdtp_local_id(ack->client_id_be);
 	struct sdtp_inpcb *tmp = pcb;
+	struct sdtp_rpc_bucket *bucket;
 	struct sdtp_rpc *rpc;
-	bool target_locked = false;
-
-	PCB_LOCK_OWNED(pcb);
+	bool target_held = false;
 
 	if (tmp->port != server_port) {
-		sdtp_pcb_unlock(pcb);
 		mtx_lock_spin(&pcb->sdtp->port_map.write_spinlock);
 		tmp = sdtp_find_inpcb(&pcb->sdtp->port_map, server_port);
 		if (tmp != NULL) {
-			sdtp_pcb_lock(tmp);
-			target_locked = true;
+			sdtp_pcb_hold(tmp);
+			target_held = true;
 		}
 		mtx_unlock_spin(&pcb->sdtp->port_map.write_spinlock);
 		if (tmp == NULL) {
-			sdtp_pcb_lock(pcb);
 			return;
 		}
 	}
 
-	rpc = sdtp_find_server_rpc(tmp, source_addr, source_port, id);
+	bucket = sdtp_server_rpc_bucket(tmp, id);
+	mtx_lock_spin(&bucket->spinlock);
+	LIST_FOREACH(rpc, &bucket->rpcs, hash_links) {
+		if (rpc->id == id &&
+		    is_ipv6_same(&rpc->peer->addr, source_addr)) {
+			break;
+		}
+	}
+	if (rpc == NULL) {
+		mtx_unlock_spin(&bucket->spinlock);
+	}
 	if (rpc) {
-		sdtp_rpc_free_locked(rpc);
+		sdtp_rpc_free(rpc);
 		sdtp_rpc_unlock(rpc);
 	}
-	if (target_locked) {
-		sdtp_pcb_unlock(tmp);
-		sdtp_pcb_lock(pcb);
+	if (target_held) {
+		sdtp_pcb_put(tmp);
 	}
 }
 
@@ -588,8 +594,7 @@ sdtp_ack_client(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc,
 	}
 
 	sdtp_rpc_unlock(rpc);
-	sdtp_rpc_acked(pcb, source, ntohs(header->common.sport_be),
-	    &header->ack);
+	sdtp_rpc_acked(pcb, source, &header->ack);
 	sdtp_rpc_lock(rpc);
 
 	return rpc->state != SDTP_RPC_DEAD;
