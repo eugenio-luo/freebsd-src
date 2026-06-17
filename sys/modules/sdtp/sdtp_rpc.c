@@ -159,7 +159,6 @@ sdtp_handoff_rpc_waiting:
 	mtx_lock_spin(&interest->spinlock);
 	sdtp_rpc_debug(rpc, "there is a thread waiting");
 	atomic_set_32(&rpc->flags_atomic, RPC_HANDING_OFF);
-	atomic_store_32(&interest->locked_atomic, 0);
 
 	sdtp_rpc_hold(rpc);
 

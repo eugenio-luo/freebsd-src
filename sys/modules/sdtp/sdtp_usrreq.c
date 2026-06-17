@@ -67,7 +67,6 @@ sdtp_register_interest(struct sdtp_interest *interest, struct sdtp_inpcb *pcb,
 	struct sdtp_rpc *rpc = NULL, *ready_rpc;
 
 	sdtp_interest_init(interest);
-	atomic_store_int(&interest->locked_atomic, 1);
 	if (id != 0) {
 		if (!sdtp_is_client(id)) {
 			error = EINVAL;

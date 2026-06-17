@@ -31,7 +31,6 @@ struct sdtp_interest {
 
 	uintptr_t ready_rpc_atomic;
 
-	int locked_atomic;
 	struct mtx spinlock;
 
 	struct sdtp_rpc *reg_rpc;
