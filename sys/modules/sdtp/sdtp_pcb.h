@@ -112,10 +112,14 @@ sdtp_pcb_hold(struct sdtp_inpcb *pcb)
 static inline void
 sdtp_pcb_put(struct sdtp_inpcb *pcb)
 {
+	bool released;
+
 	KASSERT(refcount_load(&pcb->refs) > 1,
 	    ("%s: cannot release the PCB owner reference", __func__));
-	KASSERT(!refcount_release(&pcb->refs),
+	released = refcount_release(&pcb->refs);
+	KASSERT(!released,
 	    ("%s: PCB operation reference released the object", __func__));
+	(void)released;
 }
 
 void insert_response_interest(struct sdtp_inpcb *pcb, struct sdtp_interest *interest);

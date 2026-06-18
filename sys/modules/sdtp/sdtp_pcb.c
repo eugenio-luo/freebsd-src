@@ -261,12 +261,15 @@ sdtp_pcb_free(struct sdtp_inpcb *pcb)
 
 	struct inpcb *inp = &pcb->inp;
 	bool dead_rpcs_empty;
+	bool released;
 
 	while (refcount_load(&pcb->refs) != 1) {
 		pause("sdtpref", 1);
 	}
 
+#ifdef INVARIANTS
 	int i = 0;
+#endif
 	for (;;) {
 		sdtp_pcb_lock(pcb);
 		dead_rpcs_empty = TAILQ_EMPTY(&pcb->dead_rpcs);
@@ -275,13 +278,17 @@ sdtp_pcb_free(struct sdtp_inpcb *pcb)
 			break;
 		}
 		sdtp_rpc_reap(pcb, /* reap_all */ true);
+#ifdef INVARIANTS
 		KASSERT(i < 6, ("%s: hanged while freeing dead RPCs", __func__));
 		++i;
+#endif
 	}
 
 	sdtp_ctx_map_destroy(pcb);
-	KASSERT(refcount_release(&pcb->refs),
+	released = refcount_release(&pcb->refs);
+	KASSERT(released,
 	    ("%s: PCB still has operation references", __func__));
+	(void)released;
 	mtx_destroy(&pcb->spinlock);
 
 	for (int i = 0; i < SDTP_CLIENT_RPC_BUCKETS; ++i) {

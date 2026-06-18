@@ -159,8 +159,10 @@ sdtp_payload_len(struct mbuf *m, int iphlen)
 	KASSERT(m->m_flags & M_PKTHDR, ("mbuf must be a header mbuf"));
 	KASSERT(iphlen > 0, ("iphlen must be positive"));
 
+#ifdef INVARIANTS
 	struct sdtp_common_header *header = SDTP_MTOD(m, struct sdtp_common_header *, iphlen);
 	KASSERT(header->type == SDTP_DATA, ("mbuf must be DATA type"));
+#endif
 
 	return m->m_pkthdr.len - sizeof(struct sdtp_data_header) - iphlen;
 }
