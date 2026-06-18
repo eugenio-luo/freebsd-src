@@ -345,6 +345,107 @@ sdtp_metrics_init(struct sdtp *sdtp)
 	    &sdtp->metrics.destroyed_sockets, 0,
 	    "destroyed_sockets");
 
+	SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx,
+	    SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+	    "lat_input_cycles", CTLFLAG_RW,
+	    &sdtp->metrics.lat_input_cycles, 0,
+	    "cycles spent in sdtp_input");
+	SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx,
+	    SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+	    "lat_input_count", CTLFLAG_RW,
+	    &sdtp->metrics.lat_input_count, 0,
+	    "sdtp_input latency samples");
+	SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx,
+	    SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+	    "lat_handle_packet_cycles", CTLFLAG_RW,
+	    &sdtp->metrics.lat_handle_packet_cycles, 0,
+	    "cycles spent in sdtp_handle_packet");
+	SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx,
+	    SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+	    "lat_handle_packet_count", CTLFLAG_RW,
+	    &sdtp->metrics.lat_handle_packet_count, 0,
+	    "sdtp_handle_packet latency samples");
+	SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx,
+	    SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+	    "lat_data_packet_cycles", CTLFLAG_RW,
+	    &sdtp->metrics.lat_data_packet_cycles, 0,
+	    "cycles spent processing DATA packets");
+	SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx,
+	    SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+	    "lat_data_packet_count", CTLFLAG_RW,
+	    &sdtp->metrics.lat_data_packet_count, 0,
+	    "DATA packet latency samples");
+	SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx,
+	    SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+	    "lat_message_out_cycles", CTLFLAG_RW,
+	    &sdtp->metrics.lat_message_out_cycles, 0,
+	    "cycles spent preparing outbound messages");
+	SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx,
+	    SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+	    "lat_message_out_count", CTLFLAG_RW,
+	    &sdtp->metrics.lat_message_out_count, 0,
+	    "outbound message latency samples");
+	SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx,
+	    SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+	    "lat_fill_packets_cycles", CTLFLAG_RW,
+	    &sdtp->metrics.lat_fill_packets_cycles, 0,
+	    "cycles spent copying user data into packet mbufs");
+	SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx,
+	    SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+	    "lat_fill_packets_count", CTLFLAG_RW,
+	    &sdtp->metrics.lat_fill_packets_count, 0,
+	    "packet fill latency samples");
+	SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx,
+	    SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+	    "lat_ip_output_cycles", CTLFLAG_RW,
+	    &sdtp->metrics.lat_ip_output_cycles, 0,
+	    "cycles spent in IP output");
+	SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx,
+	    SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+	    "lat_ip_output_count", CTLFLAG_RW,
+	    &sdtp->metrics.lat_ip_output_count, 0,
+	    "IP output latency samples");
+	SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx,
+	    SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+	    "lat_copy_to_user_cycles", CTLFLAG_RW,
+	    &sdtp->metrics.lat_copy_to_user_cycles, 0,
+	    "cycles spent copying received data to user space");
+	SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx,
+	    SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+	    "lat_copy_to_user_count", CTLFLAG_RW,
+	    &sdtp->metrics.lat_copy_to_user_count, 0,
+	    "copy-to-user latency samples");
+	SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx,
+	    SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+	    "lat_wait_for_message_cycles", CTLFLAG_RW,
+	    &sdtp->metrics.lat_wait_for_message_cycles, 0,
+	    "cycles spent waiting for receive messages");
+	SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx,
+	    SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+	    "lat_wait_for_message_count", CTLFLAG_RW,
+	    &sdtp->metrics.lat_wait_for_message_count, 0,
+	    "wait-for-message latency samples");
+	SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx,
+	    SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+	    "lat_sosend_cycles", CTLFLAG_RW,
+	    &sdtp->metrics.lat_sosend_cycles, 0,
+	    "cycles spent in sdtp_sosend");
+	SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx,
+	    SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+	    "lat_sosend_count", CTLFLAG_RW,
+	    &sdtp->metrics.lat_sosend_count, 0,
+	    "sdtp_sosend latency samples");
+	SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx,
+	    SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+	    "lat_rpc_lifetime_cycles", CTLFLAG_RW,
+	    &sdtp->metrics.lat_rpc_lifetime_cycles, 0,
+	    "cycles from RPC creation to complete receive");
+	SYSCTL_ADD_U64(&sdtp->metrics.sysctl_ctx,
+	    SYSCTL_CHILDREN(sdtp->metrics.sysctl_tree), OID_AUTO,
+	    "lat_rpc_lifetime_count", CTLFLAG_RW,
+	    &sdtp->metrics.lat_rpc_lifetime_count, 0,
+	    "RPC lifetime latency samples");
+
 
 	return err;
 }

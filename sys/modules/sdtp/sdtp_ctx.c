@@ -11,6 +11,7 @@
 #include <sys/socket.h>
 #include <sys/socketvar.h>
 #include <sys/sockopt.h>
+#include <sys/systm.h>
 #include <sys/ktls.h>
 #include <sys/uio.h>
 #include <sys/endian.h>
@@ -983,8 +984,11 @@ sdtp_tls_fill_packets(struct sdtp_rpc *rpc, struct uio *uio, int max_packet_size
 	MUST_POSITIVE(uio->uio_resid);
 
 	MUST_POSITIVE(max_packet_size);
+	uint64_t start_cycles = get_cyclecount();
 
 	if (max_packet_size > MJUMPAGESIZE) {
+		SDTP_LATENCY(rpc->sdtpcb->sdtp, lat_fill_packets_cycles,
+		    lat_fill_packets_count, start_cycles);
 		return (EMSGSIZE);
 	}
 
@@ -997,6 +1001,8 @@ sdtp_tls_fill_packets(struct sdtp_rpc *rpc, struct uio *uio, int max_packet_size
 	struct ktls_session *session = sdtp_ctx_get_session(rpc, true);
 
 	if (max_packet_size > session->params.max_frame_len) {
+		SDTP_LATENCY(rpc->sdtpcb->sdtp, lat_fill_packets_cycles,
+		    lat_fill_packets_count, start_cycles);
 		return (EMSGSIZE);
 	}
 
@@ -1118,5 +1124,7 @@ sdtp_tls_fill_packets_out:
 		free(iov, M_TEMP);
 	}
 	sdtp_rpc_lock(rpc);
+	SDTP_LATENCY(rpc->sdtpcb->sdtp, lat_fill_packets_cycles,
+	    lat_fill_packets_count, start_cycles);
 	return (error);
 }

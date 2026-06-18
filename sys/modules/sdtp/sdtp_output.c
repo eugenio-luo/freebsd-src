@@ -57,6 +57,7 @@ sdtp_send_control_buf(struct sdtp_inpcb *pcb, struct sdtp_peer *peer,
 	struct epoch_tracker et;
 	int error, family = sdtp_so(pcb)->so_proto->pr_domain->dom_family;
 	size_t iphlen = pcb->iphlen;
+	uint64_t ip_output_start;
 
 	m = m_gethdr(M_NOWAIT, MT_DATA);
 	if (!m) {
@@ -89,7 +90,10 @@ sdtp_send_control_buf(struct sdtp_inpcb *pcb, struct sdtp_peer *peer,
 		ip_header->ip_src = inp->inp_laddr;
 		ip_header->ip_sum = in_cksum_hdr(ip_header);
 
+		ip_output_start = get_cyclecount();
 		error = ip_output(m, NULL, &inp->inp_route, 0, NULL, inp);
+		SDTP_LATENCY(pcb->sdtp, lat_ip_output_cycles,
+		    lat_ip_output_count, ip_output_start);
 		NET_EPOCH_EXIT(et);
 		INP_WUNLOCK(inp);
 		sdtp_pcb_debug(pcb, "ip_output return error: %d", error);
@@ -323,6 +327,7 @@ sdtp_fill_packets(struct sdtp_rpc *rpc, struct uio *uio,
 
 	int bytes_left, offset = 0, error = 0;
 	struct sdtp_packet_slist_entry *prev = NULL;
+	uint64_t start_cycles = get_cyclecount();
 
 	sdtp_rpc_debug(rpc, "total message length to send: %d",
 	    rpc->msgout.length);
@@ -383,10 +388,14 @@ sdtp_fill_packets(struct sdtp_rpc *rpc, struct uio *uio,
 		++rpc->msgout.num_bufs;
 	}
 
+	SDTP_LATENCY(rpc->sdtpcb->sdtp, lat_fill_packets_cycles,
+	    lat_fill_packets_count, start_cycles);
 	return 0;
 
 sdtp_fill_packets_slist_error:
 	sdtp_rpc_lock(rpc);
+	SDTP_LATENCY(rpc->sdtpcb->sdtp, lat_fill_packets_cycles,
+	    lat_fill_packets_count, start_cycles);
 	return error;
 }
 
@@ -436,6 +445,7 @@ sdtp_send_data(struct sdtp_rpc *rpc, struct mbuf *buf, int priority, bool overwr
 	// struct nhop_object *nh;
 	struct inpcb *inp = &rpc->sdtpcb->inp;
 	int family = sdtp_so(rpc->sdtpcb)->so_proto->pr_domain->dom_family;
+	uint64_t ip_output_start;
 
 	// nh = rpc->peer->nh;
 	header = (struct sdtp_data_header *)(mtod(buf, char *) +
@@ -468,7 +478,10 @@ sdtp_send_data(struct sdtp_rpc *rpc, struct mbuf *buf, int priority, bool overwr
 		ip_header->ip_src = inp->inp_laddr;
 		ip_header->ip_sum = 0;
 
+		ip_output_start = get_cyclecount();
 		int res = ip_output(buf, NULL, &inp->inp_route, IP_RAWOUTPUT, NULL, inp);
+		SDTP_LATENCY(rpc->sdtpcb->sdtp, lat_ip_output_cycles,
+		    lat_ip_output_count, ip_output_start);
 		NET_EPOCH_EXIT(et);
 		INP_WUNLOCK(inp);
 		sdtp_rpc_debug(rpc, "ip_output return error: %d", res);
@@ -588,6 +601,7 @@ sdtp_message_out(struct sdtp_rpc *rpc, struct uio *uio, bool immediate_send)
 	int max_packet_size, error = 0;
 	//, overlap_xmit;
 	uint16_t mtu;
+	uint64_t start_cycles = get_cyclecount();
 
 	// sdtp_debug_print_pcb_rpcs(rpc->sdtpcb, rpc);
 
@@ -637,10 +651,14 @@ sdtp_message_out(struct sdtp_rpc *rpc, struct uio *uio, bool immediate_send)
 	}
 
 	SDTP_METRIC(rpc->sdtpcb->sdtp, send_rpcs_atomic, 1);
+	SDTP_LATENCY(rpc->sdtpcb->sdtp, lat_message_out_cycles,
+	    lat_message_out_count, start_cycles);
 	return 0;
 
 sdtp_message_out_error:
 	atomic_clear_32(&rpc->flags_atomic, RPC_COPYING_FROM_USER);
+	SDTP_LATENCY(rpc->sdtpcb->sdtp, lat_message_out_cycles,
+	    lat_message_out_count, start_cycles);
 	return error;
 }
 

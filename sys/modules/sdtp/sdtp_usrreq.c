@@ -333,6 +333,7 @@ sdtp_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc)
 
 	int error = 0, n = 0, iphlen = rpc->sdtpcb->iphlen;
 	struct mbuf *bufs[MAX_BUFS];
+	uint64_t start_cycles = get_cyclecount();
 
 	while (true) {
 		n = sdtp_collect_bufs(rpc, bufs, iphlen);
@@ -346,6 +347,8 @@ sdtp_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc)
 		}
 	}
 
+	SDTP_LATENCY(rpc->sdtpcb->sdtp, lat_copy_to_user_cycles,
+	    lat_copy_to_user_count, start_cycles);
 	return (error);
 }
 
@@ -524,6 +527,7 @@ sdtp_ctx_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc)
 	int error = 0, iphlen = rpc->sdtpcb->iphlen, rec_start = -1, rec_len = -1, n = 0;
 	int trailer_len = -1;
 	struct sdtp_packet_tailq_entry *entries[MAX_BUFS];
+	uint64_t start_cycles = get_cyclecount();
 
 	while (true) {
 		if (sdtp_get_record_window(rpc, &rec_start, &rec_len)) {
@@ -561,6 +565,8 @@ sdtp_ctx_copy_to_user(struct uio *uio, struct sdtp_rpc *rpc)
 	}
 
 	sdtp_free_entries(entries, n);
+	SDTP_LATENCY(rpc->sdtpcb->sdtp, lat_copy_to_user_cycles,
+	    lat_copy_to_user_count, start_cycles);
 	return (error);
 }
 
@@ -599,6 +605,7 @@ sdtp_wait_for_message(struct sdtp_inpcb *pcb, int flags, uint64_t id,
 	struct sdtp_rpc *rpc = NULL;
 	struct sdtp_interest interest;
 	uint64_t poll_start, now;
+	uint64_t start_cycles = get_cyclecount();
 	int blocked, sleep_error, more_rpcs_to_reap = true;
 
 	while (1) {
@@ -682,6 +689,8 @@ sdtp_wait_for_message(struct sdtp_inpcb *pcb, int flags, uint64_t id,
 		sdtp_pcb_debug(pcb, "new rpc after waking: %llu",
 		    (uintptr_t)rpc);
 		if (rpc == NULL && *error != 0) {
+			SDTP_LATENCY(pcb->sdtp, lat_wait_for_message_cycles,
+			    lat_wait_for_message_count, start_cycles);
 			return (NULL);
 		}
 		if (rpc) {
@@ -717,6 +726,9 @@ sdtp_wait_for_message(struct sdtp_inpcb *pcb, int flags, uint64_t id,
 			    rpc->msgin.copied_out, rpc->msgin.total_length);
 			if (rpc->msgin.copied_out == rpc->msgin.total_length) {
 				SDTP_METRIC(rpc->sdtpcb->sdtp, recv_rpcs_atomic, 1);
+				SDTP_LATENCY(rpc->sdtpcb->sdtp,
+				    lat_rpc_lifetime_cycles,
+				    lat_rpc_lifetime_count, rpc->start_cycles);
 				goto sdtp_wait_for_message_done;
 			}
 			sdtp_rpc_put(rpc);
@@ -725,6 +737,8 @@ sdtp_wait_for_message(struct sdtp_inpcb *pcb, int flags, uint64_t id,
 	}
 
 sdtp_wait_for_message_done:
+	SDTP_LATENCY(pcb->sdtp, lat_wait_for_message_cycles,
+	    lat_wait_for_message_count, start_cycles);
 	return rpc;
 }
 
@@ -1099,8 +1113,9 @@ sdtp_sosend(struct socket *so, struct sockaddr *addr, struct uio *uio,
 	KASSERT(top == NULL, ("top must be null"));
 
 	int error = 0;
-	struct sdtp_inpcb *pcb;
+	struct sdtp_inpcb *pcb = NULL;
 	struct sdtp_sendmsg_args *args;
+	uint64_t start_cycles = get_cyclecount();
 
 	sdtp_debug("sosend\n");
 
@@ -1149,6 +1164,13 @@ sdtp_sosend_error:
 		sdtp_free_mbuf(control);
 	}
 
+	if (pcb != NULL) {
+		SDTP_LATENCY(pcb->sdtp, lat_sosend_cycles,
+		    lat_sosend_count, start_cycles);
+	} else {
+		SDTP_LATENCY(sdtp, lat_sosend_cycles, lat_sosend_count,
+		    start_cycles);
+	}
 	return error;
 }
 

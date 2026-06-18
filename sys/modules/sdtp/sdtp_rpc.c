@@ -657,6 +657,7 @@ sdtp_data_packet(struct sdtp *sdtp, struct mbuf *m, struct sdtp_rpc *rpc,
 	KASSERT(source != NULL, ("source must be valid"));
 
 	struct sdtp_data_header *header = SDTP_MTOD(m, struct sdtp_data_header *, pcb->iphlen);
+	uint64_t start_cycles = get_cyclecount();
 	sdtp_set_header_offset(header);
 	sdtp_data_header_debug(header, NULL);
 
@@ -695,9 +696,13 @@ sdtp_data_packet(struct sdtp *sdtp, struct mbuf *m, struct sdtp_rpc *rpc,
 		// TODO: The sender has out-of-date cutoffs
 	}
 
+	SDTP_LATENCY(sdtp, lat_data_packet_cycles, lat_data_packet_count,
+	    start_cycles);
 	return true;
 
 sdtp_data_packet_error:
+	SDTP_LATENCY(sdtp, lat_data_packet_cycles, lat_data_packet_count,
+	    start_cycles);
 	return false;
 }
 
@@ -1074,6 +1079,7 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source,
 	struct sdtp_rpc *rpc = NULL;
 	struct sdtp_expected_rpc_ptr expected_rpc;
 	int payload_size = (header->type == SDTP_DATA) ? sdtp_payload_len(m, pcb->iphlen) : -1;
+	uint64_t start_cycles = get_cyclecount();
 
 	expected_rpc = sdtp_get_rpc(pcb, header, source, payload_size);
 	if (SDTP_IS_ERROR(expected_rpc)) {
@@ -1162,6 +1168,8 @@ sdtp_handle_packet(struct mbuf *m, struct in6_addr *source,
 	if (!consumed) {
 		sdtp_free_mbuf(m);
 	}
+	SDTP_LATENCY(pcb->sdtp, lat_handle_packet_cycles,
+	    lat_handle_packet_count, start_cycles);
 	return;
 
 sdtp_handle_packet_error:
@@ -1172,6 +1180,8 @@ sdtp_handle_packet_error:
 	if (m != NULL) {
 		sdtp_free_mbuf(m);
 	}
+	SDTP_LATENCY(pcb->sdtp, lat_handle_packet_cycles,
+	    lat_handle_packet_count, start_cycles);
 }
 
 void

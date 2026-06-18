@@ -114,6 +114,7 @@ sdtp_input(struct mbuf **mp, int *offp, int proto)
 	struct in6_addr src_addr;
 	struct sdtp_inpcb *pcb = NULL;
 	struct mbuf *m = *mp;
+	uint64_t start_cycles = get_cyclecount();
 
 	/* We want to access at least the common header */
 	if ((m = m_pullup(m, *offp + sizeof(struct sdtp_common_header))) ==
@@ -150,6 +151,7 @@ sdtp_input_done:
 		check_pcb_locks(pcb);
 		sdtp_pcb_put(pcb);
 	}
+	SDTP_LATENCY(sdtp, lat_input_cycles, lat_input_count, start_cycles);
 	return (IPPROTO_DONE);
 }
 

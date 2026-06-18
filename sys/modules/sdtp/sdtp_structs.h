@@ -64,6 +64,27 @@ struct sdtp_metrics {
 	uint64_t opened_sockets;
 	uint64_t closed_sockets;
 	uint64_t destroyed_sockets;
+
+	uint64_t lat_input_cycles;
+	uint64_t lat_input_count;
+	uint64_t lat_handle_packet_cycles;
+	uint64_t lat_handle_packet_count;
+	uint64_t lat_data_packet_cycles;
+	uint64_t lat_data_packet_count;
+	uint64_t lat_message_out_cycles;
+	uint64_t lat_message_out_count;
+	uint64_t lat_fill_packets_cycles;
+	uint64_t lat_fill_packets_count;
+	uint64_t lat_ip_output_cycles;
+	uint64_t lat_ip_output_count;
+	uint64_t lat_copy_to_user_cycles;
+	uint64_t lat_copy_to_user_count;
+	uint64_t lat_wait_for_message_cycles;
+	uint64_t lat_wait_for_message_count;
+	uint64_t lat_sosend_cycles;
+	uint64_t lat_sosend_count;
+	uint64_t lat_rpc_lifetime_cycles;
+	uint64_t lat_rpc_lifetime_count;
 };
 
 struct sdtp_dead_dst {
@@ -224,6 +245,12 @@ void sdtp_pool_free_ctx(struct sdtp_ctx *ctx);
 #define SDTP_METRIC(S, FIELD, VAL)                                 \
 	do {                                                       \
 		atomic_add_64(&((S)->metrics.FIELD), VAL); \
+	} while (0)
+
+#define SDTP_LATENCY(S, CYCLES_FIELD, COUNT_FIELD, START)          \
+	do {                                                       \
+		SDTP_METRIC((S), CYCLES_FIELD, get_cyclecount() - (START)); \
+		SDTP_METRIC((S), COUNT_FIELD, 1);                   \
 	} while (0)
 
 VNET_DECLARE(struct inpcbinfo, sdtp_pcbinfo);
