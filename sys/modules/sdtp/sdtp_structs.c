@@ -43,6 +43,16 @@ int sdtp_header_lengths[] = {
 	sizeof(struct sdtp_need_ack_header), sizeof(struct sdtp_ack_header)
 };
 
+uint64_t
+sdtp_usecs_to_cycles(uint64_t usecs)
+{
+	uint64_t tickrate;
+
+	tickrate = cpu_tickrate();
+	return ((usecs / 1000000) * tickrate +
+	    ((usecs % 1000000) * tickrate) / 1000000);
+}
+
 static int
 sdtp_packet_tailq_pool_init(struct sdtp_packet_tailq_pool *pool)
 {
@@ -488,6 +498,7 @@ sdtp_struct_init(struct sdtp *sdtp)
 	sdtp->unsched_bytes = 10000;
 	sdtp->link_mbps = 10000;
 	sdtp->poll_usecs = 50;
+	sdtp->poll_cycles = sdtp_usecs_to_cycles(sdtp->poll_usecs);
 	sdtp->num_priorities = SDTP_MAX_PRIORITIES;
 	for (i = 0; i < SDTP_MAX_PRIORITIES; i++)
 		sdtp->priority_map[i] = i;

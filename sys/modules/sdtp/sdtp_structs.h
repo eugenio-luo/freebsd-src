@@ -132,7 +132,7 @@ struct sdtp {
 	int unsched_bytes;
 	int link_mbps;
 	int poll_usecs;
-	int poll_cycles;
+	uint64_t poll_cycles;
 	int num_priorities;
 	int priority_map[SDTP_MAX_PRIORITIES];
 	int max_sched_prio;
@@ -235,6 +235,7 @@ sdtp_port_hash(uint16_t port)
 int sdtp_init(struct sdtp *sdtp);
 int sdtp_exit(struct sdtp *sdtp);
 void sdtp_interest_init(struct sdtp_interest *interest);
+uint64_t sdtp_usecs_to_cycles(uint64_t usecs);
 
 struct sdtp_packet_tailq_entry *sdtp_pool_alloc_packet_tailq_entry(void);
 void sdtp_pool_free_packet_tailq_entry(struct sdtp_packet_tailq_entry *entry);
