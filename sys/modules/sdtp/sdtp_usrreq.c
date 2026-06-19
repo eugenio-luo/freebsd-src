@@ -114,7 +114,7 @@ sdtp_register_interest(struct sdtp_interest *interest, struct sdtp_inpcb *pcb,
 		}
 
 		sdtp_pcb_lock(pcb);
-		if (sdtp_pcb_is_shutdown(pcb)) {
+		if (pcb->shutdown) {
 			sdtp_pcb_unlock(pcb);
 			error = ESHUTDOWN;
 			goto sdtp_register_interest_error;
@@ -144,7 +144,7 @@ sdtp_register_interest(struct sdtp_interest *interest, struct sdtp_inpcb *pcb,
 
 retry_generic:
 	sdtp_pcb_lock(pcb);
-	if (sdtp_pcb_is_shutdown(pcb)) {
+	if (pcb->shutdown) {
 		sdtp_pcb_unlock(pcb);
 		return ESHUTDOWN;
 	}
