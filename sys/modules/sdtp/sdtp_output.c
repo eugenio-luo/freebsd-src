@@ -55,7 +55,7 @@ sdtp_send_control_buf(struct sdtp_inpcb *pcb, struct sdtp_peer *peer,
 	struct mbuf *m;
 	struct inpcb *inp = &pcb->inp;
 	struct epoch_tracker et;
-	int error, family = sdtp_so(pcb)->so_proto->pr_domain->dom_family;
+	int error = 0, family = sdtp_so(pcb)->so_proto->pr_domain->dom_family;
 	size_t iphlen = pcb->iphlen;
 	uint64_t ip_output_start;
 
