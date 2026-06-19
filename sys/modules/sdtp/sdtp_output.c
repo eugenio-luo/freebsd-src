@@ -579,7 +579,14 @@ sdtp_send_next_data(struct sdtp_rpc *rpc, bool force)
 
 		sdtp_rpc_unlock(rpc);
 
-		txm = m_dup(buf, M_NOWAIT);
+		txm = m_copypacket(buf, M_NOWAIT);
+		if (txm != NULL && (!M_WRITABLE(txm) || txm->m_len < rpc->sdtpcb->iphlen)) {
+			txm = m_pullup(txm, rpc->sdtpcb->iphlen);
+		}
+		if (txm == NULL) {
+			break;
+		}
+
 		KASSERT(txm != NULL, ("txm must be valid"));
 		sdtp_send_data(rpc, txm, priority, !is_encrypted_rpc(rpc));
 		force = false;
