@@ -248,11 +248,20 @@ void sdtp_pool_free_ctx(struct sdtp_ctx *ctx);
 		atomic_add_64(&((S)->metrics.FIELD), VAL); \
 	} while (0)
 
+#ifdef SDTP_LATENCY_ALLOW
+
 #define SDTP_LATENCY(S, CYCLES_FIELD, COUNT_FIELD, START)          \
 	do {                                                       \
 		SDTP_METRIC((S), CYCLES_FIELD, get_cyclecount() - (START)); \
 		SDTP_METRIC((S), COUNT_FIELD, 1);                   \
 	} while (0)
+
+#else
+
+#define SDTP_LATENCY(S, CYCLES_FIELD, COUNT_FIELD, START) \
+	do { (void)(START); } while (0)
+
+#endif
 
 VNET_DECLARE(struct inpcbinfo, sdtp_pcbinfo);
 #define V_sdtp_pcbinfo	VNET(sdtp_pcbinfo)
