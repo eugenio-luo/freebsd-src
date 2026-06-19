@@ -12,7 +12,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "../loaded/sdtp_loaded.h"
+#include "sdtp_bench.h"
 
 struct sdtp_simple_config {
 	const char *server_address;
