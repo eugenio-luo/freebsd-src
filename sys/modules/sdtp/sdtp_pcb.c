@@ -215,7 +215,7 @@ sdtp_inpcb_alloc(struct socket *so, struct sdtp *sdtp)
 void
 sdtp_inpcb_shutdown(struct sdtp_inpcb *pcb)
 {
-	struct sdtp_rpc *rpc, *next_rpc;
+	struct sdtp_rpc *rpc;
 	struct sdtp_interest *interest;
 
 	sdtp_pcb_lock(pcb);
@@ -228,13 +228,25 @@ sdtp_inpcb_shutdown(struct sdtp_inpcb *pcb)
 	mtx_lock_spin(&pcb->sdtp->port_map.write_spinlock);
 	LIST_REMOVE(&pcb->pcbmap_links, hash_links);
 	mtx_unlock_spin(&pcb->sdtp->port_map.write_spinlock);
+	sdtp_pcb_unlock(pcb);
 
-	TAILQ_FOREACH_SAFE(rpc, &pcb->active_rpcs, active_links, next_rpc) {
+	for (;;) {
+		sdtp_pcb_lock(pcb);
+		rpc = TAILQ_FIRST(&pcb->active_rpcs);
+		if (rpc == NULL) {
+			sdtp_pcb_unlock(pcb);
+			break;
+		}
+		sdtp_rpc_hold(rpc);
+		sdtp_pcb_unlock(pcb);
+
 		sdtp_rpc_lock(rpc);
-		sdtp_rpc_free_locked(rpc);
+		sdtp_rpc_free(rpc);
 		sdtp_rpc_unlock(rpc);
+		sdtp_rpc_put(rpc);
 	}
 
+	sdtp_pcb_lock(pcb);
 	TAILQ_FOREACH(interest, &pcb->request_interests, request_links) {
 		mtx_lock_spin(&interest->spinlock);
 		wakeup(&interest->spinlock);
