@@ -50,6 +50,24 @@
 
 extern struct sdtp_zones zones;
 
+#define SDTP_MESSAGE_ID_BITS	48
+#define SDTP_RECORD_INDEX_BITS	16
+#define SDTP_RPC_ID_BITS	(SDTP_MESSAGE_ID_BITS + 1)
+#define SDTP_RPC_ID_MASK	((1ULL << SDTP_RPC_ID_BITS) - 1)
+
+CTASSERT(SDTP_MESSAGE_ID_BITS + SDTP_RECORD_INDEX_BITS == 64);
+
+static uint64_t
+sdtp_composite_record_seqno(uint64_t rpc_id, const uint8_t rec_seq[8])
+{
+	uint64_t message_id, record_index;
+
+	message_id = (rpc_id & SDTP_RPC_ID_MASK) >> 1;
+	record_index = be64dec(rec_seq) & ((1ULL << SDTP_RECORD_INDEX_BITS) - 1);
+
+	return ((message_id << SDTP_RECORD_INDEX_BITS) | record_index);
+}
+
 static inline uint32_t
 ms_rthash(const uint32_t addr, const uint16_t port)
 {
@@ -301,8 +319,10 @@ sdtp_rpc_ctx_init(struct sdtp_inpcb *pcb, struct sdtp_rpc *rpc)
 	rpc->crypto.offset = 0;
 	rpc->crypto.max = mtu -
 	    IP_SDTP_HEADER_SIZE(rpc->sdtpcb, struct sdtp_data_header);
-	rpc->crypto.tx_seqno = 0;
-	rpc->crypto.rx_seqno = 0;
+	rpc->crypto.tx_seqno = sdtp_composite_record_seqno(rpc->id,
+	    ctx->tx.en.rec_seq);
+	rpc->crypto.rx_seqno = sdtp_composite_record_seqno(rpc->id,
+	    ctx->rx.en.rec_seq);
 
 	sdtp_rpc_debug(rpc, "successful ctx init");
 
@@ -826,7 +846,8 @@ sdtp_ctx_decrypt(struct sdtp_rpc *rpc, int iphlen, struct sdtp_packet_tailq_entr
 	struct mbuf *m = entries[0]->data;
 	struct ktls_session *session;
 	struct tls_record_layer *header;
-	int error = 0, seqno = rpc->crypto.rx_seqno;
+	uint64_t seqno = rpc->crypto.rx_seqno;
+	int error = 0;
 
 	session = sdtp_ctx_get_session(rpc, false);
 	if (session == NULL) {
