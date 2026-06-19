@@ -96,6 +96,7 @@ static int
 sdtp_register_interest(struct sdtp_interest *interest, struct sdtp_inpcb *pcb,
     int flags, uint64_t id)
 {
+	bool more_ready;
 	int error = 0;
 	struct sdtp_rpc *rpc = NULL, *ready_rpc = NULL;
 
@@ -111,93 +112,103 @@ sdtp_register_interest(struct sdtp_interest *interest, struct sdtp_inpcb *pcb,
 			error = EINVAL;
 			goto sdtp_register_interest_error;
 		}
-		sdtp_rpc_hold(rpc);
 
-		if ((rpc->interest != NULL) && (rpc->interest != interest)) {
+		sdtp_pcb_lock(pcb);
+		if (sdtp_pcb_is_shutdown(pcb)) {
+			sdtp_pcb_unlock(pcb);
+			error = ESHUTDOWN;
+			goto sdtp_register_interest_error;
+		}
+		if (rpc->state == SDTP_RPC_DEAD ||
+		    (rpc->interest != NULL && rpc->interest != interest)) {
+			sdtp_pcb_unlock(pcb);
 			error = EINVAL;
 			goto sdtp_register_interest_error;
 		}
-	}
-
-	sdtp_pcb_lock(pcb);
-	if (pcb->shutdown) {
-		sdtp_pcb_unlock(pcb);
-		error = ESHUTDOWN;
-		goto sdtp_register_interest_error;
-	}
-
-	if (id != 0) {
 		if ((atomic_load_32(&rpc->flags_atomic) & RPC_PKTS_READY) ||
 		    rpc->error) {
 			ready_rpc = rpc;
-			goto sdtp_register_interest_claim_rpc;
+			if (atomic_load_int(&rpc->is_ready_atomic)) {
+				remove_ready_rpc(pcb, rpc);
+			}
+			goto sdtp_register_interest_claim_locked_rpc;
 		}
+
 		rpc->interest = interest;
 		interest->reg_rpc = rpc;
 		sdtp_rpc_hold(rpc);
+		sdtp_pcb_unlock(pcb);
 		sdtp_rpc_unlock(rpc);
+		return 0;
 	}
 
-	atomic_store_int(&interest->locked_atomic, 0);
+retry_generic:
+	sdtp_pcb_lock(pcb);
+	if (sdtp_pcb_is_shutdown(pcb)) {
+		sdtp_pcb_unlock(pcb);
+		return ESHUTDOWN;
+	}
+
 	if (flags & SDTP_RECVMSG_RESPONSE) {
 		sdtp_pcb_debug(pcb, "Check if there are response RPCs");
 		if (!LIST_EMPTY(&pcb->ready_responses)) {
 			sdtp_pcb_debug(pcb,
 			    "There are response RPCs in PCB list");
 			ready_rpc = LIST_FIRST(&pcb->ready_responses);
-			goto sdtp_register_interest_claim_rpc;
 		}
-
-		insert_response_interest(pcb, interest);
 	}
-	if (flags & SDTP_RECVMSG_REQUEST) {
+	if (ready_rpc == NULL && (flags & SDTP_RECVMSG_REQUEST)) {
 		sdtp_pcb_debug(pcb, "Check if there are request RPCs");
 		if (!LIST_EMPTY(&pcb->ready_requests)) {
 			sdtp_pcb_debug(pcb,
 			    "There are request RPCs in PCB list");
 			ready_rpc = LIST_FIRST(&pcb->ready_requests);
-
-			if (atomic_load_int(&interest->is_response_atomic)) {
-				remove_response_interest(pcb, interest);
-			}
-
-			goto sdtp_register_interest_claim_rpc;
 		}
-
-		insert_request_interest(pcb, interest);
 	}
 
-	if (rpc != NULL) {
-		sdtp_rpc_put(rpc);
+	if (ready_rpc != NULL) {
+		if (!mtx_trylock_spin(ready_rpc->spinlock_p)) {
+			sdtp_pcb_unlock(pcb);
+			pause("sdtpclaim", 1);
+			ready_rpc = NULL;
+			goto retry_generic;
+		}
+		if (ready_rpc->state == SDTP_RPC_DEAD ||
+		    !atomic_load_int(&ready_rpc->is_ready_atomic)) {
+			sdtp_rpc_unlock(ready_rpc);
+			sdtp_pcb_unlock(pcb);
+			ready_rpc = NULL;
+			goto retry_generic;
+		}
+		remove_ready_rpc(pcb, ready_rpc);
+		goto sdtp_register_interest_claim_locked_rpc;
+	}
+
+	if (flags & SDTP_RECVMSG_RESPONSE) {
+		insert_response_interest(pcb, interest);
+	}
+	if (flags & SDTP_RECVMSG_REQUEST) {
+		insert_request_interest(pcb, interest);
 	}
 	sdtp_pcb_unlock(pcb);
 	return 0;
 
-sdtp_register_interest_claim_rpc:
-	if (rpc != NULL) {
-		sdtp_rpc_put(rpc);
-	}
-
-	remove_ready_rpc(pcb, ready_rpc);
-	if (!LIST_EMPTY(&pcb->ready_requests) ||
-	    !LIST_EMPTY(&pcb->ready_responses)) {
+sdtp_register_interest_claim_locked_rpc:
+	atomic_set_32(&ready_rpc->flags_atomic, RPC_HANDING_OFF);
+	sdtp_rpc_hold(ready_rpc);
+	atomic_store_rel_ptr(&interest->ready_rpc_atomic,
+	    (uintptr_t)ready_rpc);
+	more_ready = !LIST_EMPTY(&pcb->ready_requests) ||
+	    !LIST_EMPTY(&pcb->ready_responses);
+	sdtp_pcb_unlock(pcb);
+	sdtp_rpc_unlock(ready_rpc);
+	if (more_ready) {
 		sdtp_sorwakeup(pcb);
 	}
-
-	atomic_set_32(&ready_rpc->flags_atomic, RPC_HANDING_OFF);
-	sdtp_pcb_unlock(pcb);
-	if (!atomic_load_int(&interest->locked_atomic)) {
-		sdtp_rpc_lock(ready_rpc);
-		atomic_store_int(&interest->locked_atomic, 1);
-	}
-	atomic_clear_32(&ready_rpc->flags_atomic, RPC_HANDING_OFF);
-	atomic_store_ptr(&interest->ready_rpc_atomic, (uintptr_t)ready_rpc);
-	sdtp_rpc_hold(ready_rpc);
 	return 0;
 
 sdtp_register_interest_error:
 	if (rpc) {
-		sdtp_rpc_put(rpc);
 		sdtp_rpc_unlock(rpc);
 	}
 	return error;
